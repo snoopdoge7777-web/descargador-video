@@ -176,13 +176,14 @@ def procesar():
     data = request.get_json(force=True, silent=True) or {}
     job_id = data.get("job_id") or uuid.uuid4().hex[:8]
 
+    # Captura robusta de URLs tanto en plural como en singular
     urls = data.get("urls")
     if not urls:
         url_unico = data.get("url")
         urls = [url_unico] if url_unico else []
 
     if not urls:
-        return jsonify({"error": "No se proporcionó ninguna URL"}), 400
+        return jsonify({"error": "No URL provided"}), 400
 
     max_clips = int(data.get("max_clips", 8))
     silencio_db = int(data.get("silencio_db", -30))
@@ -204,7 +205,7 @@ def procesar():
 
             duracion = obtener_duracion(ruta_full)
             segmentos = detectar_segmentos_habla(
-                ruta_full, duracion,silencio_db, silencio_min_dur, clip_min_dur
+                ruta_full, duracion, silencio_db, silencio_min_dur, clip_min_dur
             )
 
             if not segmentos:

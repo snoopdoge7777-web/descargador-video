@@ -1,31 +1,3 @@
-"""
-app.py
-
-Microservicio 100% automático: recibe solo {url} de YouTube, descarga el
-video con yt-dlp, detecta automáticamente los segmentos de "habla" del
-video (separados por silencios / pausas) usando el filtro silencedetect
-de ffmpeg, recorta cada segmento, y sube cada clip resultante a Discord
-via webhook (que actúa como almacenamiento/CDN gratuito).
-
-No hace falta indicar tiempos de inicio/fin: el propio análisis de audio
-decide dónde cortar.
-
-Variables de entorno requeridas:
-- DISCORD_WEBHOOK_URL: URL del webhook del canal de Discord.
-- API_TOKEN: token simple para proteger el endpoint público.
-
-Parámetros opcionales en el body:
-- max_clips (int, default 8): tope de clips a generar. Si se detectan más
-  segmentos que este número, se conservan los más largos (los más
-  "sustanciales") y se descartan pausas cortas irrelevantes.
-- silencio_db (int, default -30): sensibilidad del detector de silencio,
-  en dB. Más negativo = necesita más silencio real para cortar.
-- silencio_min_dur (float, default 1.0): duración mínima de silencio (seg)
-  para considerarlo un corte de escena.
-- clip_min_dur (float, default 5.0): duración mínima de un clip para que
-  valga la pena subirlo.
-"""
-
 import os
 import re
 import subprocess
@@ -45,10 +17,6 @@ TMP_DIR.mkdir(parents=True, exist_ok=True)
 LIMITE_DISCORD_MB = 25
 
 
-# ----------------------------------------------------------------------
-# Utilidades básicas
-# ----------------------------------------------------------------------
-
 def validar_url(url: str):
   patron = re.compile(
       r"^(https?://)?(www\.)?(youtube\.com/watch\?v=|youtu\.be/)[\w-]+"
@@ -59,12 +27,17 @@ def validar_url(url: str):
 
 def obtener_duracion(url: str) -> float:
   import json
-
-  resultado = subprocess.run(
-      ["yt-dlp", "--dump-json", "--no-playlist", url],
-      capture_output=True,
-      text=True,
-  )
+  # Agregamos user-agent para evitar bloqueos de bot en servidores cloud
+  comando = [
+      "yt-dlp",
+      "--user-agent",
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,"
+      " like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "--dump-json",
+      "--no-playlist",
+      url,
+  ]
+  resultado = subprocess.run(comando, capture_output=True, text=True)
   if resultado.returncode != 0:
     raise RuntimeError(f"No se pudo leer el video: {resultado.stderr.strip()}")
   info = json.loads(resultado.stdout)
@@ -74,6 +47,9 @@ def obtener_duracion(url: str) -> float:
 def descargar_video(url: str, destino: Path):
   comando = [
       "yt-dlp",
+      "--user-agent",
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,"
+      " like Gecko) Chrome/120.0.0.0 Safari/537.36",
       "-f",
       "bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[ext=mp4]/b",
       "--no-playlist",
@@ -93,10 +69,6 @@ def formatear_tiempo(segundos: float) -> str:
   return f"{h:02d}:{m:02d}:{s:02d}"
 
 
-# ----------------------------------------------------------------------
-# Detección automática de segmentos (silencio / cambio de escena)
-# ----------------------------------------------------------------------
-
 def detectar_segmentos_habla(
     ruta_video: Path,
     duracion_total: float,
@@ -104,11 +76,6 @@ def detectar_segmentos_habla(
     silencio_min_dur: float = 1.0,
     clip_min_dur: float = 5.0,
 ):
-  """Corre ffmpeg con el filtro silencedetect para encontrar los tramos de
-
-  silencio, y de ahí deduce los tramos de "habla/acción" (lo que queda
-  entre silencios). Cada tramo de habla es un clip candidato.
-  """
   comando = [
       "ffmpeg",
       "-i",
@@ -129,8 +96,6 @@ def detectar_segmentos_habla(
       float(x) for x in re.findall(r"silence_end:\s*([\d.]+)", salida)
   ]
 
-  # Si el video termina en silencio, ffmpeg puede no imprimir el
-  # silence_end final: lo completamos con el final del video.
   if len(silence_ends) < len(silence_starts):
     silence_ends.append(duracion_total)
 
@@ -202,11 +167,6 @@ def subir_a_discord(ruta: Path) -> str:
   return data["attachments"][0]["url"]
 
 
-# ----------------------------------------------------------------------
-# Endpoint principal
-# ----------------------------------------------------------------------
-
-
 @app.route("/auto-recortar", methods=["POST"])
 def auto_recortar():
   auth = request.headers.get("Authorization", "")
@@ -234,13 +194,8 @@ def auto_recortar():
     )
 
     if not segmentos:
-      raise RuntimeError(
-          "No se detectaron cortes de silencio/escena en el video. Probá"
-          " bajar 'silencio_min_dur' o subir 'silencio_db'."
-      )
+      raise RuntimeError("No se detectaron cortes de silencio en el video.")
 
-    # Si hay demasiados segmentos, nos quedamos con los más largos
-    # (más sustanciales) y descartamos pausas cortas sin contenido.
     if len(segmentos) > max_clips:
       segmentos = sorted(
           segmentos, key=lambda s: s[1] - s[0], reverse=True
@@ -287,6 +242,3 @@ def home():
 if __name__ == "__main__":
   port = int(os.environ.get("PORT", 8080))
   app.run(host="0.0.0.0", port=port)
-```[cite: 6]
-
-Copia este contenido en tu archivo `app.py`, súbelo a GitHub y haz el *Manual Deploy* en Render para que quede perfectamente sincronizado con el JSON automático de n8n[cite: 8].

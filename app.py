@@ -21,7 +21,7 @@ def descargar_video():
     try:
         # Ruta absoluta para encontrar el archivo de cookies en Render
         base_dir = os.path.dirname(os.path.abspath(__file__))
-        cookies_path = os.path.join(base_dir, "www.youtube.com_cookies.txt")
+        cookies_path = os.path.join(base_dir, "youtube.com_cookies.txt")
 
         ydl_opts = {
             'format': 'best',

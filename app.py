@@ -1,36 +1,5 @@
 """
-app.py
-
-Microservicio automático de recorte de YouTube.
-
-Flujo:
-1. Recibe uno o varios links de YouTube (+ un job_id opcional).
-2. Descarga cada video (yt-dlp primero; si YouTube lo bloquea, cae a
-   pytubefix como respaldo automático).
-3. Detecta los cortes de forma automática analizando silencios/pausas
-   de audio con ffmpeg (silencedetect) — no hace falta indicar tiempos.
-4. Sube cada clip resultante a Discord (vía webhook), marcado como
-   PENDIENTE DE REVISIÓN — la subida a YouTube se hace después,
-   a mano, una vez que revisás los clips en Discord.
-5. Manda mensajes de progreso a Discord en cada paso (igual que tu
-   prototipo original), para poder seguir el proceso en tiempo real.
-
-Variables de entorno requeridas:
-- DISCORD_WEBHOOK_URL: URL del webhook del canal de Discord.
-- API_TOKEN: token simple para proteger el endpoint público
-  (se manda como header "Authorization: Bearer <token>").
-
-Body esperado (POST a "/"):
-{
-  "urls": ["https://youtube.com/...", "https://youtube.com/..."],
-  "job_id": "opcional-para-identificar-la-tanda",
-  "max_clips": 8,              // opcional
-  "silencio_db": -30,          // opcional
-  "silencio_min_dur": 1.0,     // opcional
-  "clip_min_dur": 5.0          // opcional
-}
-
-También acepta {"url": "..."} (un solo link) por compatibilidad.
+app.py - Microservicio automático de recorte de YouTube.
 """
 
 import os
@@ -53,12 +22,7 @@ TMP_DIR.mkdir(parents=True, exist_ok=True)
 LIMITE_DISCORD_MB = 25
 
 
-# ----------------------------------------------------------------------
-# Discord
-# ----------------------------------------------------------------------
-
 def enviar_a_discord(mensaje: str):
-    """Manda un mensaje de texto/progreso a Discord (no bloquea el flujo si falla)."""
     if not DISCORD_WEBHOOK_URL:
         return
     try:
@@ -68,7 +32,6 @@ def enviar_a_discord(mensaje: str):
 
 
 def enviar_archivo_a_discord(ruta: Path, mensaje: str) -> str:
-    """Sube un archivo a Discord y devuelve la URL del adjunto."""
     if not DISCORD_WEBHOOK_URL:
         raise RuntimeError("Falta configurar DISCORD_WEBHOOK_URL en el servidor.")
     with open(ruta, "rb") as f:
@@ -83,10 +46,6 @@ def enviar_archivo_a_discord(ruta: Path, mensaje: str) -> str:
     data = resp.json()
     return data["attachments"][0]["url"]
 
-
-# ----------------------------------------------------------------------
-# Descarga: yt-dlp primero, pytubefix como respaldo
-# ----------------------------------------------------------------------
 
 def validar_url(url: str):
     patron = re.compile(
@@ -108,8 +67,6 @@ def descargar_video(url: str, destino: Path):
     if resultado.returncode == 0 and destino.exists():
         return
 
-    # Respaldo: si yt-dlp fue bloqueado por YouTube (común en IPs de
-    # hosting gratuito), probamos con pytubefix.
     try:
         from pytubefix import YouTube
         yt = YouTube(url)
@@ -126,7 +83,6 @@ def descargar_video(url: str, destino: Path):
 
 
 def obtener_duracion(ruta_video: Path) -> float:
-    """Duración real del archivo ya descargado (via ffprobe, sirve para ambos métodos de descarga)."""
     comando = [
         "ffprobe", "-v", "error", "-show_entries", "format=duration",
         "-of", "default=noprint_wrappers=1:nokey=1", str(ruta_video),
@@ -137,10 +93,6 @@ def obtener_duracion(ruta_video: Path) -> float:
     except ValueError:
         raise RuntimeError("No se pudo determinar la duración del video descargado.")
 
-
-# ----------------------------------------------------------------------
-# Detección automática de segmentos + recorte
-# ----------------------------------------------------------------------
 
 def formatear_tiempo(segundos: float) -> str:
     segundos = max(0, int(segundos))
@@ -212,10 +164,6 @@ def comprimir_si_hace_falta(ruta: Path) -> Path:
     return comprimido
 
 
-# ----------------------------------------------------------------------
-# Endpoint principal
-# ----------------------------------------------------------------------
-
 @app.route("/", methods=["GET", "POST"])
 def procesar():
     if request.method == "GET":
@@ -256,7 +204,7 @@ def procesar():
 
             duracion = obtener_duracion(ruta_full)
             segmentos = detectar_segmentos_habla(
-                ruta_full, duracion, silencio_db, silencio_min_dur, clip_min_dur
+                ruta_full, duracion,silencio_db, silencio_min_dur, clip_min_dur
             )
 
             if not segmentos:

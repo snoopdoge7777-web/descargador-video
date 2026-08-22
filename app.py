@@ -26,10 +26,10 @@ def descargar_video():
     enviar_a_discord(f"⏳ Iniciando procesamiento automático del trabajo `{job_id}` ...")
 
     try:
+        # Usar un formato directo que no requiera ffmpeg para combinarse
         ydl_opts = {
-            'format': 'bestvideo+bestaudio/best',
+            'format': 'best[ext=mp4]/best',
             'outtmpl': 'video.mp4',
-            'merge_output_format': 'mp4',
             'extractor_args': {
                 'youtube': {
                     'player_client': ['web_safari', 'web_embedded']

@@ -19,17 +19,25 @@ def descargar_video():
     enviar_a_discord(f"⏳ Iniciando procesamiento automático del trabajo `{job_id}` ...")
 
     try:
-        # Ruta absoluta para encontrar el archivo de cookies en Render
+        # Mostrar los archivos disponibles en el directorio actual para depuración en Render
         base_dir = os.path.dirname(os.path.abspath(__file__))
-        cookies_path = os.path.join(base_dir, "youtube.com_cookies.txt")
+        print("Archivos en la carpeta actual:", os.listdir(base_dir))
 
+        cookies_path = os.path.join(base_dir, "www.youtube.com_cookies.txt")
+        
         ydl_opts = {
             'format': 'best',
             'outtmpl': 'video.mp4',
-            'cookiefile': cookies_path,
             'extractor_args': {'youtube': {'player_client': ['default']}},
         }
-        
+
+        # Solo agregar cookies si el archivo realmente existe en el servidor
+        if os.path.exists(cookies_path):
+            print("¡Archivo de cookies encontrado!")
+            ydl_opts['cookiefile'] = cookies_path
+        else:
+            print("¡ADVERTENCIA! No se encontró el archivo de cookies en:", cookies_path)
+
         if os.path.exists("video.mp4"):
             os.remove("video.mp4")
 

@@ -12,7 +12,6 @@ COOKIES_FILE = "www.youtube.com_cookies.txt"
 if COOKIES_CONTENT:
     with open(COOKIES_FILE, "w", encoding="utf-8") as f:
         f.write(COOKIES_CONTENT)
-    print("✅ Archivo de cookies creado desde la variable de entorno.")
 
 @app.route("/", methods=["POST"])
 def descargar_video():
@@ -26,15 +25,13 @@ def descargar_video():
     enviar_a_discord(f"⏳ Iniciando procesamiento automático del trabajo `{job_id}` ...")
 
     try:
-        # Configuramos el cliente Android y omitimos restricciones estrictas de formato
+        # Configuración simplificada que busca cualquier formato descargable sin requerir ffmpeg ni selectores complejos
         ydl_opts = {
-            'format': 'best',
+            'format': 'b',
             'outtmpl': 'video.mp4',
-            'extractor_args': {
-                'youtube': {
-                    'player_client': ['android']
-                }
-            }
+            'noplaylist': True,
+            'ignoreerrors': False,
+            'no_warnings': True,
         }
 
         if os.path.exists(COOKIES_FILE):
@@ -51,7 +48,7 @@ def descargar_video():
             os.remove("video.mp4")
             return jsonify({"status": "success"})
         else:
-            raise Exception("No se pudo generar el archivo de video.")
+            raise Exception("No se generó el archivo de video.")
 
     except Exception as e:
         error_msg = str(e)

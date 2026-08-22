@@ -1,4 +1,4 @@
 flask
 requests
-yt-dlp
+yt-dlp --upgrade
 git+https://github.com/JuanBindez/pytubefix.git

@@ -6,6 +6,16 @@ import yt_dlp
 app = Flask(__name__)
 
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
+COOKIES_CONTENT = os.environ.get("COOKIES_CONTENT")
+
+# Crear el archivo de cookies automáticamente si existe la variable en Render
+COOKIES_FILE = "www.youtube.com_cookies.txt"
+if COOKIES_CONTENT:
+    with open(COOKIES_FILE, "w", encoding="utf-8") as f:
+        f.write(COOKIES_CONTENT)
+    print("✅ Archivo de cookies creado desde la variable de entorno.")
+else:
+    print("⚠️ ADVERTENCIA: No se encontró la variable COOKIES_CONTENT.")
 
 @app.route("/", methods=["POST"])
 def descargar_video():
@@ -19,24 +29,15 @@ def descargar_video():
     enviar_a_discord(f"⏳ Iniciando procesamiento automático del trabajo `{job_id}` ...")
 
     try:
-        # Mostrar los archivos disponibles en el directorio actual para depuración en Render
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        print("Archivos en la carpeta actual:", os.listdir(base_dir))
-
-        cookies_path = os.path.join(base_dir, "www.youtube.com_cookies.txt")
-        
         ydl_opts = {
             'format': 'best',
             'outtmpl': 'video.mp4',
             'extractor_args': {'youtube': {'player_client': ['default']}},
         }
 
-        # Solo agregar cookies si el archivo realmente existe en el servidor
-        if os.path.exists(cookies_path):
-            print("¡Archivo de cookies encontrado!")
-            ydl_opts['cookiefile'] = cookies_path
-        else:
-            print("¡ADVERTENCIA! No se encontró el archivo de cookies en:", cookies_path)
+        if os.path.exists(COOKIES_FILE):
+            ydl_opts['cookiefile'] = COOKIES_FILE
+            print("🍪 Usando archivo de cookies para la descarga.")
 
         if os.path.exists("video.mp4"):
             os.remove("video.mp4")

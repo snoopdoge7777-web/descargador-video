@@ -1,4 +1,5 @@
 import os
+import subprocess
 import requests
 from flask import Flask, request, jsonify
 import yt_dlp
@@ -8,17 +9,20 @@ app = Flask(__name__)
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 COOKIES_CONTENT = os.environ.get("COOKIES_CONTENT")
 
-# Crear el archivo de cookies automáticamente si existe la variable en Render
 COOKIES_FILE = "www.youtube.com_cookies.txt"
 if COOKIES_CONTENT:
     with open(COOKIES_FILE, "w", encoding="utf-8") as f:
         f.write(COOKIES_CONTENT)
     print("✅ Archivo de cookies creado desde la variable de entorno.")
-else:
-    print("⚠️ ADVERTENCIA: No se encontró la variable COOKIES_CONTENT.")
 
 @app.route("/", methods=["POST"])
 def descargar_video():
+    # Actualizar yt-dlp automáticamente en cada petición para mantenerlo al día con YouTube
+    try:
+        subprocess.run(["pip", "install", "--upgrade", "yt-dlp"], check=False)
+    except Exception:
+        pass
+
     data = request.json
     video_url = data.get("url")
     job_id = data.get("job_id", "desconocido")
@@ -32,12 +36,12 @@ def descargar_video():
         ydl_opts = {
             'format': 'best',
             'outtmpl': 'video.mp4',
-            'extractor_args': {'youtube': {'player_client': ['default']}},
+            # Usar clientes de respaldo para evitar el error de "The page needs to be reloaded"
+            'extractor_args': {'youtube': {'player_client': ['web_safari', 'web_embedded', 'tv']}},
         }
 
         if os.path.exists(COOKIES_FILE):
             ydl_opts['cookiefile'] = COOKIES_FILE
-            print("🍪 Usando archivo de cookies para la descarga.")
 
         if os.path.exists("video.mp4"):
             os.remove("video.mp4")

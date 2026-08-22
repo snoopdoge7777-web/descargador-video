@@ -19,11 +19,14 @@ def descargar_video():
     enviar_a_discord(f"⏳ Iniciando procesamiento automático del trabajo `{job_id}` ...")
 
     try:
-        # Configuración de yt-dlp con soporte actualizado y cookies
+        # Ruta absoluta para asegurar que encuentre el archivo de cookies en Render
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        cookies_path = os.path.join(base_dir, "www.youtube.com_cookies.txt")
+
         ydl_opts = {
             'format': 'best',
             'outtmpl': 'video.mp4',
-            'cookiefile': 'www.youtube.com_cookies.txt',
+            'cookiefile': cookies_path,
             'extractor_args': {'youtube': {'player_client': ['default']}},
         }
         

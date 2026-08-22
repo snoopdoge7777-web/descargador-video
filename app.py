@@ -19,7 +19,7 @@ def descargar_video():
     enviar_a_discord(f"⏳ Iniciando procesamiento automático del trabajo `{job_id}` ...")
 
     try:
-        # Ruta absoluta para asegurar que encuentre el archivo de cookies en Render
+        # Ruta absoluta para encontrar el archivo de cookies en Render
         base_dir = os.path.dirname(os.path.abspath(__file__))
         cookies_path = os.path.join(base_dir, "www.youtube.com_cookies.txt")
 

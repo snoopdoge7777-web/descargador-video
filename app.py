@@ -19,32 +19,31 @@ def descargar_video():
     enviar_a_discord(f"⏳ Iniciando procesamiento automático del trabajo `{job_id}` ...")
 
     try:
-        # Extraemos la URL directa del video usando yt-dlp sin restricciones complejas
+        # Extraemos el enlace usando un cliente alternativo básico sin cookies
         ydl_opts = {
-            'format': 'best[ext=mp4]/best',
+            'format': 'best',
             'noplaylist': True,
-            'skip_download': True, # Solo extraemos el enlace de descarga directa
+            'skip_download': True,
+            'extractor_args': {'youtube': {'player_client': ['android', 'mweb']}}
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(video_url, download=False)
             download_url = info.get('url')
             
-            # Si viene fragmentado, buscamos un formato alternativo directo
             if not download_url and 'formats' in info:
                 for f in info['formats']:
-                    if f.get('ext') == 'mp4' and f.get('url'):
+                    if f.get('url'):
                         download_url = f.get('url')
                         break
 
         if not download_url:
-            raise Exception("No se pudo obtener el enlace directo de descarga.")
+            raise Exception("No se pudo obtener el enlace de descarga.")
 
-        # Descargamos el video usando requests de forma limpia y directa
         if os.path.exists("video.mp4"):
             os.remove("video.mp4")
 
-        print(f"Descargando desde: {download_url}")
+        # Descarga directa por HTTP
         r = requests.get(download_url, stream=True, timeout=60)
         with open("video.mp4", "wb") as f:
             for chunk in r.iter_content(chunk_size=1024*1024):
@@ -56,7 +55,7 @@ def descargar_video():
             os.remove("video.mp4")
             return jsonify({"status": "success"})
         else:
-            raise Exception("El archivo descargado está vacío o no se generó.")
+            raise Exception("El archivo descargado quedó vacío.")
 
     except Exception as e:
         error_msg = str(e)

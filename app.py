@@ -1,6 +1,7 @@
 import os
 import re
 import subprocess
+import threading
 import uuid
 from pathlib import Path
 
@@ -27,7 +28,6 @@ def validar_url(url: str):
 
 def obtener_duracion(url: str) -> float:
   import json
-  # Agregamos user-agent para evitar bloqueos de bot en servidores cloud
   comando = [
       "yt-dlp",
       "--user-agent",
@@ -167,6 +167,56 @@ def subir_a_discord(ruta: Path) -> str:
   return data["attachments"][0]["url"]
 
 
+def avisar_a_discord(mensaje: str):
+  if DISCORD_WEBHOOK_URL:
+    requests.post(DISCORD_WEBHOOK_URL, json={"content": mensaje})
+
+
+def procesar_en_segundo_plano(url, max_clips, silencio_db, silencio_min_dur, clip_min_dur, id_trabajo):
+  ruta_full = TMP_DIR / f"{id_trabajo}_full.mp4"
+  clips_temporales = []
+  try:
+    avisar_a_discord(f"⏳ Iniciando procesamiento automático del trabajo `{id_trabajo}`...")
+    duracion = obtener_duracion(url)
+    descargar_video(url, ruta_full)
+
+    segmentos = detectar_segmentos_habla(
+        ruta_full, duracion, silencio_db, silencio_min_dur, clip_min_dur
+    )
+
+    if not segmentos:
+      avisar_a_discord(f"❌ Error en trabajo `{id_trabajo}`: No se detectaron cortes de silencio.")
+      return
+
+    if len(segmentos) > max_clips:
+      segmentos = sorted(segmentos, key=lambda s: s[1] - s[0], reverse=True)[:max_clips]
+      segmentos.sort(key=lambda s: s[0])
+
+    for i, (inicio_seg, fin_seg) in enumerate(segmentos):
+      ruta_clip = TMP_DIR / f"{id_trabajo}_clip{i}.mp4"
+      clips_temporales.append(ruta_clip)
+
+      recortar_video(ruta_full, ruta_clip, inicio_seg, fin_seg)
+      ruta_final = comprimir_si_hace_falta(ruta_clip)
+      clips_temporales.append(ruta_final)
+
+      link = subir_a_discord(ruta_final)
+      tiempo_inicio = formatear_tiempo(inicio_seg)
+      tiempo_fin = formatear_tiempo(fin_seg)
+      avisar_a_discord(f"✅ Clip automático [{tiempo_inicio} - {tiempo_fin}] (`{id_trabajo}`):\n{link}")
+
+    avisar_a_discord(f"🎉 ¡Trabajo `{id_trabajo}` finalizado con éxito! Todos los clips fueron enviados.")
+
+  except Exception as e:
+    avisar_a_discord(f"❌ Error crítico en trabajo `{id_trabajo}`: {str(e)}")
+  finally:
+    if ruta_full.exists():
+      ruta_full.unlink()
+    for p in clips_temporales:
+      if p.exists():
+        p.unlink()
+
+
 @app.route("/auto-recortar", methods=["POST"])
 def auto_recortar():
   auth = request.headers.get("Authorization", "")
@@ -180,63 +230,31 @@ def auto_recortar():
   silencio_min_dur = float(body.get("silencio_min_dur", 1.0))
   clip_min_dur = float(body.get("clip_min_dur", 5.0))
 
-  id_trabajo = uuid.uuid4().hex[:8]
-  ruta_full = TMP_DIR / f"{id_trabajo}_full.mp4"
-  clips_temporales = []
-
   try:
     validar_url(url)
-    duracion = obtener_duracion(url)
-    descargar_video(url, ruta_full)
-
-    segmentos = detectar_segmentos_habla(
-        ruta_full, duracion, silencio_db, silencio_min_dur, clip_min_dur
-    )
-
-    if not segmentos:
-      raise RuntimeError("No se detectaron cortes de silencio en el video.")
-
-    if len(segmentos) > max_clips:
-      segmentos = sorted(
-          segmentos, key=lambda s: s[1] - s[0], reverse=True
-      )[:max_clips]
-      segmentos.sort(key=lambda s: s[0])
-
-    resultados = []
-    for i, (inicio_seg, fin_seg) in enumerate(segmentos):
-      ruta_clip = TMP_DIR / f"{id_trabajo}_clip{i}.mp4"
-      clips_temporales.append(ruta_clip)
-
-      recortar_video(ruta_full, ruta_clip, inicio_seg, fin_seg)
-      ruta_final = comprimir_si_hace_falta(ruta_clip)
-      clips_temporales.append(ruta_final)
-
-      link = subir_a_discord(ruta_final)
-      resultados.append({
-          "inicio": formatear_tiempo(inicio_seg),
-          "fin": formatear_tiempo(fin_seg),
-          "link": link,
-      })
-
-    return jsonify(
-        {"ok": True, "clips": resultados, "total_clips": len(resultados)}
-    )
-
   except ValueError as e:
     return jsonify({"ok": False, "error": str(e)}), 400
-  except RuntimeError as e:
-    return jsonify({"ok": False, "error": str(e)}), 500
-  finally:
-    if ruta_full.exists():
-      ruta_full.unlink()
-    for p in clips_temporales:
-      if p.exists():
-        p.unlink()
+
+  id_trabajo = uuid.uuid4().hex[:8]
+
+  # Lanzamos el proceso en segundo plano para evitar el timeout (Error 502) en Render
+  hilo = threading.Thread(
+      target=procesar_en_segundo_plano,
+      args=(url, max_clips, silencio_db, silencio_min_dur, clip_min_dur, id_trabajo)
+  )
+  hilo.start()
+
+  return jsonify({
+      "ok": True,
+      "status": "pendiente",
+      "id_trabajo": id_trabajo,
+      "mensaje": "Solicitud recibida. Los clips se procesarán automáticamente y llegarán a Discord."
+  })
 
 
 @app.route("/", methods=["GET"])
 def home():
-  return jsonify({"status": "ok", "servicio": "recorte-youtube-automatico"})
+  return jsonify({"status": "ok", "servicio": "recorte-youtube-automatico-async"})
 
 
 if __name__ == "__main__":

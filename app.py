@@ -19,29 +19,44 @@ def descargar_video():
     enviar_a_discord(f"⏳ Iniciando procesamiento automático del trabajo `{job_id}` ...")
 
     try:
-        # Forzamos el cliente de Android y formato pre-combinado sin usar cookies
+        # Extraemos la URL directa del video usando yt-dlp sin restricciones complejas
         ydl_opts = {
-            'format': 'best',
-            'outtmpl': 'video.mp4',
-            'extractor_args': {
-                'youtube': {
-                    'player_client': ['android']
-                }
-            }
+            'format': 'best[ext=mp4]/best',
+            'noplaylist': True,
+            'skip_download': True, # Solo extraemos el enlace de descarga directa
         }
 
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(video_url, download=False)
+            download_url = info.get('url')
+            
+            # Si viene fragmentado, buscamos un formato alternativo directo
+            if not download_url and 'formats' in info:
+                for f in info['formats']:
+                    if f.get('ext') == 'mp4' and f.get('url'):
+                        download_url = f.get('url')
+                        break
+
+        if not download_url:
+            raise Exception("No se pudo obtener el enlace directo de descarga.")
+
+        # Descargamos el video usando requests de forma limpia y directa
         if os.path.exists("video.mp4"):
             os.remove("video.mp4")
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([video_url])
+        print(f"Descargando desde: {download_url}")
+        r = requests.get(download_url, stream=True, timeout=60)
+        with open("video.mp4", "wb") as f:
+            for chunk in r.iter_content(chunk_size=1024*1024):
+                if chunk:
+                    f.write(chunk)
 
-        if os.path.exists("video.mp4"):
+        if os.path.exists("video.mp4") and os.path.getsize("video.mp4") > 0:
             enviar_archivo_a_discord("video.mp4", f"✅ Video procesado con éxito para el trabajo `{job_id}`")
             os.remove("video.mp4")
             return jsonify({"status": "success"})
         else:
-            raise Exception("No se generó el archivo de video.")
+            raise Exception("El archivo descargado está vacío o no se generó.")
 
     except Exception as e:
         error_msg = str(e)

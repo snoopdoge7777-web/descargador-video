@@ -26,13 +26,13 @@ def descargar_video():
     enviar_a_discord(f"⏳ Iniciando procesamiento automático del trabajo `{job_id}` ...")
 
     try:
-        # Usamos el cliente tv_embedded o mweb que evitan las restricciones actuales de JS
+        # Configuramos el cliente Android y omitimos restricciones estrictas de formato
         ydl_opts = {
-            'format': 'best[ext=mp4]/best',
+            'format': 'best',
             'outtmpl': 'video.mp4',
             'extractor_args': {
                 'youtube': {
-                    'player_client': ['tv_embedded', 'mweb']
+                    'player_client': ['android']
                 }
             }
         }

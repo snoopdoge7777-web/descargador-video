@@ -19,16 +19,14 @@ def descargar_video():
     enviar_a_discord(f"⏳ Iniciando procesamiento automático del trabajo `{job_id}` ...")
 
     try:
-        # Configuración de yt-dlp con soporte actualizado para evitar bloqueos
+        # Configuración de yt-dlp con soporte actualizado y cookies
         ydl_opts = {
             'format': 'best',
             'outtmpl': 'video.mp4',
+            'cookiefile': 'www.youtube.com_cookies.txt',
             'extractor_args': {'youtube': {'player_client': ['default']}},
         }
         
-        # Si subiste tu archivo de cookies a GitHub, descomenta la siguiente línea:
-        # ydl_opts['cookiefile'] = 'youtube.com_cookies.txt'
-
         if os.path.exists("video.mp4"):
             os.remove("video.mp4")
 

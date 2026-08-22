@@ -6,12 +6,6 @@ import yt_dlp
 app = Flask(__name__)
 
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
-COOKIES_CONTENT = os.environ.get("COOKIES_CONTENT")
-
-COOKIES_FILE = "www.youtube.com_cookies.txt"
-if COOKIES_CONTENT:
-    with open(COOKIES_FILE, "w", encoding="utf-8") as f:
-        f.write(COOKIES_CONTENT)
 
 @app.route("/", methods=["POST"])
 def descargar_video():
@@ -25,17 +19,16 @@ def descargar_video():
     enviar_a_discord(f"⏳ Iniciando procesamiento automático del trabajo `{job_id}` ...")
 
     try:
-        # Configuración simplificada que busca cualquier formato descargable sin requerir ffmpeg ni selectores complejos
+        # Forzamos el cliente de Android y formato pre-combinado sin usar cookies
         ydl_opts = {
-            'format': 'b',
+            'format': 'best',
             'outtmpl': 'video.mp4',
-            'noplaylist': True,
-            'ignoreerrors': False,
-            'no_warnings': True,
+            'extractor_args': {
+                'youtube': {
+                    'player_client': ['android']
+                }
+            }
         }
-
-        if os.path.exists(COOKIES_FILE):
-            ydl_opts['cookiefile'] = COOKIES_FILE
 
         if os.path.exists("video.mp4"):
             os.remove("video.mp4")

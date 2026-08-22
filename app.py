@@ -56,9 +56,10 @@ def validar_url(url: str):
 
 
 def descargar_video(url: str, destino: Path):
+    # Formato simplificado y directo para evitar conflictos de mezcla en Render
     comando = [
         "yt-dlp",
-        "-f", "bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[ext=mp4]/b",
+        "-f", "best[height<=720]/best",
         "--no-playlist",
         "-o", str(destino),
         url,
@@ -176,7 +177,6 @@ def procesar():
     data = request.get_json(force=True, silent=True) or {}
     job_id = data.get("job_id") or uuid.uuid4().hex[:8]
 
-    # Captura robusta de URLs tanto en plural como en singular
     urls = data.get("urls")
     if not urls:
         url_unico = data.get("url")

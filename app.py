@@ -26,13 +26,13 @@ def descargar_video():
     enviar_a_discord(f"⏳ Iniciando procesamiento automático del trabajo `{job_id}` ...")
 
     try:
-        # Usar un formato directo que no requiera ffmpeg para combinarse
+        # Usamos el cliente tv_embedded o mweb que evitan las restricciones actuales de JS
         ydl_opts = {
             'format': 'best[ext=mp4]/best',
             'outtmpl': 'video.mp4',
             'extractor_args': {
                 'youtube': {
-                    'player_client': ['web_safari', 'web_embedded']
+                    'player_client': ['tv_embedded', 'mweb']
                 }
             }
         }

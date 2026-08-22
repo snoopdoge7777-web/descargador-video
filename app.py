@@ -1,5 +1,4 @@
 import os
-import subprocess
 import requests
 from flask import Flask, request, jsonify
 import yt_dlp
@@ -17,12 +16,6 @@ if COOKIES_CONTENT:
 
 @app.route("/", methods=["POST"])
 def descargar_video():
-    # Actualizar yt-dlp automáticamente en cada petición para mantenerlo al día con YouTube
-    try:
-        subprocess.run(["pip", "install", "--upgrade", "yt-dlp"], check=False)
-    except Exception:
-        pass
-
     data = request.json
     video_url = data.get("url")
     job_id = data.get("job_id", "desconocido")
@@ -36,8 +29,14 @@ def descargar_video():
         ydl_opts = {
             'format': 'best',
             'outtmpl': 'video.mp4',
-            # Usar clientes de respaldo para evitar el error de "The page needs to be reloaded"
-            'extractor_args': {'youtube': {'player_client': ['web_safari', 'web_embedded', 'tv']}},
+            'extractor_args': {
+                'youtube': {
+                    'player_client': ['android', 'web']
+                }
+            },
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            }
         }
 
         if os.path.exists(COOKIES_FILE):

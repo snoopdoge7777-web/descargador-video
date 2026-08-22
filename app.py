@@ -27,8 +27,9 @@ def descargar_video():
 
     try:
         ydl_opts = {
-            'format': 'best',
+            'format': 'bestvideo+bestaudio/best',
             'outtmpl': 'video.mp4',
+            'merge_output_format': 'mp4',
             'extractor_args': {
                 'youtube': {
                     'player_client': ['web_safari', 'web_embedded']

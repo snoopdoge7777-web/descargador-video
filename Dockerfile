@@ -1,15 +1,17 @@
-FROM python:3.11-slim
-
-# ffmpeg no viene con Python, se instala del sistema
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
+FROM python:3.10-slim
 
 WORKDIR /app
+
+# Instalamos ffmpeg, curl y deno (ejecutable JS que pide yt-dlp)
+RUN apt-get update && apt-get install -y ffmpeg curl unzip && rm -rf /var/lib/apt/lists/*
+RUN curl -fsSL https://deno.land/install.sh | sh
+ENV PATH="/root/.deno/bin:$PATH"
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app.py .
+COPY . .
 
-# Render/Railway inyectan la variable PORT automáticamente
-CMD ["python", "app.py"]
+EXPOSE 10000
+
+CMD ["gunicorn", "--bind", "0.0.0.0:10000", "app:app", "--timeout", "900"]

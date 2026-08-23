@@ -32,7 +32,7 @@ def procesar_video():
     urls = data.get("urls") or data.get("url")
     job_id = data.get("job_id", "desconocido")
     
-    duracion_fragmento = 60  # Cortar cada 1 minuto
+    duracion_fragmento = 60  # Duración de cada parte (60 segundos)
 
     if isinstance(urls, str):
         urls = [urls]
@@ -40,19 +40,25 @@ def procesar_video():
         return jsonify({"error": "No URL provided"}), 400
 
     url = urls[0] if isinstance(urls, list) else urls
-    enviar_discord(f"⏳ Trabajo `{job_id}` iniciado — Procesando video en partes de 1 min.")
+    enviar_discord(f"⏳ Trabajo `{job_id}` iniciado — Descargando video para recortar en partes.")
 
     try:
         input_file = "video_original.mp4"
         if os.path.exists(input_file):
             os.remove(input_file)
 
-        # Descargar video
-        cmd_dl = ["yt-dlp", "--extractor-args", "youtube:player_client=default", "-f", "best[ext=mp4]/best", "-o", input_file, url]
+        # Descarga robusta usando yt-dlp con formato compatible
+        cmd_dl = [
+            "yt-dlp", 
+            "--extractor-args", "youtube:player_client=android,web",
+            "-f", "b[ext=mp4]/b",
+            "-o", input_file, 
+            url
+        ]
         resultado = subprocess.run(cmd_dl, capture_output=True, text=True)
 
-        if resultado.returncode != 0:
-            enviar_discord(f"❌ Error descargando video.")
+        if resultado.returncode != 0 or not os.path.exists(input_file):
+            enviar_discord(f"❌ Error al descargar con yt-dlp.")
             return jsonify({"error": "Download failed"}), 500
 
         duracion_total = obtener_duracion(input_file)
@@ -85,7 +91,7 @@ def procesar_video():
                     if DISCORD_WEBHOOK_URL:
                         requests.post(
                             DISCORD_WEBHOOK_URL,
-                            data={"content": f"🎬 **Parte {parte}** (Minuto {int(inicio//60)}):"},
+                            data={"content": f"🎬 **Parte {parte}** (Desde {int(inicio)}s hasta {int(fin)}s):"},
                             files={"file": f}
                         )
                 clips_subidos += 1
@@ -93,10 +99,10 @@ def procesar_video():
 
             inicio += duracion_fragmento
             parte += 1
-            if parte > 20:  # Límite de seguridad para evitar bucles infinitos en videos muy largos
+            if parte > 25:  # Límite de seguridad
                 break
 
-        enviar_discord(f"🏁 Trabajo `{job_id}` finalizado — {clips_subidos} partes enviadas.")
+        enviar_discord(f"🏁 Trabajo `{job_id}` finalizado — Se enviaron {clips_subidos} partes a Discord.")
         return jsonify({"ok": True, "partes": clips_subidos})
 
     except Exception as e:

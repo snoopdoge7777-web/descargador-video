@@ -4,7 +4,6 @@ import math
 import requests
 import subprocess
 from flask import Flask, request, jsonify
-from pytubefix import YouTube
 
 app = Flask(__name__)
 
@@ -15,7 +14,7 @@ def send_discord_log(message):
         try:
             requests.post(DISCORD_WEBHOOK_URL, json={"content": message})
         except Exception as e:
-            print(f"Error log: {e}")
+            print(f"Error enviando log: {e}")
 
 def send_discord_file(file_path, caption=""):
     if DISCORD_WEBHOOK_URL and os.path.exists(file_path):
@@ -52,29 +51,31 @@ def process_videos():
         return jsonify({"error": "No valid URL found"}), 400
 
     url = match.group(0).rstrip('}]",\'')
-    send_discord_log(f"⏳ Trabajo `{job_id}` — Descargando con PyTubeFix para recortar en partes de {segment_duration}s...")
+    send_discord_log(f"⏳ Trabajo `{job_id}` — Descargando con yt-dlp para recortar en partes de {segment_duration}s...")
 
     downloaded_file = f"/tmp/downloaded_{job_id}.mp4"
 
     try:
-        # Descarga el stream de YouTube emulando cliente de Android (sin bloqueo BotGuard)
-        yt = YouTube(url, client='ANDROID')
-        stream = yt.streams.filter(progressive=True, file_extension='mp4').order_by('resolution').desc().first()
-        
-        if not stream:
-            stream = yt.streams.filter(file_extension='mp4').first()
+        # Comando yt-dlp para descargar formato compatible rápido en 720p o menor
+        ytdlp_cmd = [
+            'yt-dlp',
+            '-f', 'b[ext=mp4]/best[ext=mp4]/best',
+            '-o', downloaded_file,
+            '--no-playlist',
+            url
+        ]
 
-        stream.download(output_path="/tmp", filename=f"downloaded_{job_id}.mp4")
+        result = subprocess.run(ytdlp_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
-        if not os.path.exists(downloaded_file):
-            raise Exception("No se pudo obtener el archivo descargado.")
+        if result.returncode != 0 or not os.path.exists(downloaded_file):
+            raise Exception(f"yt-dlp falló: {result.stderr}")
 
         total_duration = get_video_duration(downloaded_file)
         num_segments = math.ceil(total_duration / segment_duration)
 
         send_discord_log(f"✂️ Trabajo `{job_id}` — Duración total: {int(total_duration)}s. Generando **{num_segments} partes** de {segment_duration}s...")
 
-        # Recorta y sube secuencialmente los fragmentos
+        # Recortar y subir fragmentos
         for i in range(num_segments):
             start_sec = i * segment_duration
             part_number = i + 1

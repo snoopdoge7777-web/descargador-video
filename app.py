@@ -3,7 +3,6 @@ import re
 import requests
 import subprocess
 from flask import Flask, request, jsonify
-import yt_dlp
 
 app = Flask(__name__)
 
@@ -28,6 +27,31 @@ def send_discord_file(file_path, caption=""):
         except Exception as e:
             print(f"Error file: {e}")
 
+def download_via_cobalt(url, download_path):
+    """Descarga el video utilizando la API pública de Cobalt sin bloqueos de IP."""
+    api_url = "https://api.cobalt.tools/api/json"
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "url": url,
+        "videoQuality": "720"
+    }
+    
+    response = requests.post(api_url, json=payload, headers=headers, timeout=30)
+    data = response.json()
+    
+    stream_url = data.get("url")
+    if not stream_url:
+        raise Exception(f"Cobalt error: {data.get('text', 'No se obtuvo enlace de video')}")
+        
+    with requests.get(stream_url, stream=True, timeout=60) as r:
+        r.raise_for_status()
+        with open(download_path, 'wb') as f:
+            for chunk in r.iter_content(chunk_size=8192):
+                f.write(chunk)
+
 @app.route('/', methods=['POST'])
 def process_videos():
     data = request.get_json() or {}
@@ -36,42 +60,23 @@ def process_videos():
     start_time = data.get('start_time', None)
     end_time = data.get('end_time', None)
 
-    # Extraer la URL limpia
     match = re.search(r'https?://[^\s\'"\}]+', str(raw_urls))
     if not match:
         send_discord_log(f"❌ Trabajo `{job_id}` — No se encontró una URL válida.")
         return jsonify({"error": "No valid URL found"}), 400
 
     url = match.group(0).rstrip('}]",\'')
-    send_discord_log(f"⏳ Trabajo `{job_id}` — Procesando URL: {url}")
+    send_discord_log(f"⏳ Trabajo `{job_id}` — Procesando URL vía Cobalt API: {url}")
 
-    # Opciones de yt-dlp usando clientes de TV/Android (omite bloqueos de IP de Render)
-    ydl_opts = {
-        'format': 'best',
-        'outtmpl': '/tmp/downloaded_%(id)s.%(ext)s',
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['tv', 'android_vr', 'web_embedded'],
-                'player_skip': ['webpage', 'configs'],
-            }
-        },
-        'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (SmartTV; SmartTV; U; Linux/SmartTV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36',
-        },
-        'nocheckcertificate': True,
-        'quiet': True,
-        'no_warnings': True,
-    }
+    downloaded_file = f"/tmp/downloaded_{job_id}.mp4"
 
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            downloaded_file = ydl.prepare_filename(info)
-
+        # 1. Descarga vía Cobalt
+        download_via_cobalt(url, downloaded_file)
         output_file = downloaded_file
 
-        # Recorte con FFmpeg si existen start_time y end_time válidos
-        if start_time and end_time and int(end_time) > int(start_time):
+        # 2. Recorte con FFmpeg (si hay tiempos)
+        if start_time is not None and end_time is not None and int(end_time) > int(start_time):
             trimmed_file = f"/tmp/cut_{job_id}.mp4"
             send_discord_log(f"✂️ Trabajo `{job_id}` — Recortando ({start_time}s a {end_time}s)...")
             
@@ -91,7 +96,8 @@ def process_videos():
 
             output_file = trimmed_file
 
-        caption = f"🎬 **Trabajo {job_id}** — Recorte/Descarga completada."
+        # 3. Envío a Discord
+        caption = f"🎬 **Trabajo {job_id}** — Recorte/Descarga completada con éxito."
         send_discord_file(output_file, caption=caption)
 
         if os.path.exists(output_file):
@@ -102,6 +108,8 @@ def process_videos():
     except Exception as e:
         error_msg = f"❌ Trabajo `{job_id}` — Error: {str(e)}"
         send_discord_log(error_msg)
+        if os.path.exists(downloaded_file):
+            os.remove(downloaded_file)
         return jsonify({"error": "Processing failed", "details": str(e)}), 500
 
 if __name__ == '__main__':

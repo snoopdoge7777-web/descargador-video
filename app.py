@@ -40,14 +40,13 @@ def procesar_video():
         return jsonify({"error": "No URL provided"}), 400
 
     url = urls[0] if isinstance(urls, list) else urls
-    enviar_discord(f"⏳ Trabajo `{job_id}` iniciado — Descargando video por motor alternativo...")
+    enviar_discord(f"⏳ Trabajo `{job_id}` iniciado — Descargando video...")
 
     try:
         input_file = "video_original.mp4"
         if os.path.exists(input_file):
             os.remove(input_file)
 
-        # Usamos el cliente android_creator para evadir el bloqueo de IP de Render
         cmd_dl = [
             "yt-dlp",
             "--extractor-args", "youtube:player_client=android_creator,web",
@@ -70,7 +69,6 @@ def procesar_video():
         inicio = 0
         parte = 1
 
-        # Generar cortes de 60 segundos
         while inicio < duracion_total:
             output_file = f"parte_{parte}.mp4"
             if os.path.exists(output_file):

@@ -31,7 +31,7 @@ def procesar_video():
     data = request.get_json() or {}
     urls = data.get("urls") or data.get("url")
     job_id = data.get("job_id", "desconocido")
-    duracion_fragmento = 60  # Recortes de 60 segundos
+    duracion_fragmento = 60
 
     if isinstance(urls, list):
         url = urls[0] if urls else None
@@ -41,25 +41,23 @@ def procesar_video():
     if not url:
         return jsonify({"error": "No URL provided"}), 400
 
-    enviar_discord(f"⏳ Trabajo `{job_id}` — Extrayendo video en máxima calidad vía Cobalt API...")
+    enviar_discord(f"⏳ Trabajo `{job_id}` — Extrayendo video en máxima calidad (vía Cobalt API)...")
 
     try:
         input_file = "video_original.mp4"
         if os.path.exists(input_file):
             os.remove(input_file)
 
-        # Petición a Cobalt API para obtener el enlace directo en máxima calidad
         headers = {"Accept": "application/json", "Content-Type": "application/json"}
         payload = {"url": url, "videoQuality": "max"}
         resp = requests.post("https://api.cobalt.tools/api/json", json=payload, headers=headers)
-        
+
         if resp.status_code != 200 or "url" not in resp.json():
-            enviar_discord(f"❌ Error al obtener stream de Cobalt.")
+            enviar_discord("❌ Error: No se pudo obtener el stream directo.")
             return jsonify({"error": "Cobalt API failed"}), 500
 
         stream_url = resp.json()["url"]
 
-        # Descarga directa del stream MP4
         with requests.get(stream_url, stream=True) as r:
             r.raise_for_status()
             with open(input_file, "wb") as f:
@@ -67,11 +65,14 @@ def procesar_video():
                     f.write(chunk)
 
         duracion_total = obtener_duracion(input_file)
+        if duracion_total <= 0:
+            enviar_discord("❌ Error: No se pudo medir la duración del archivo.")
+            return jsonify({"error": "Duration failed"}), 500
+
         clips_subidos = 0
         inicio = 0
         parte = 1
 
-        # Generar múltiples recortes en calidad máxima (sin pérdida de calidad)
         while inicio < duracion_total:
             output_file = f"corte_{parte}.mp4"
             if os.path.exists(output_file):
@@ -79,7 +80,6 @@ def procesar_video():
 
             fin = min(inicio + duracion_fragmento, duracion_total)
 
-            # ffmpeg con copy evita recodificar para mantener calidad 100% original
             cmd_cut = [
                 "ffmpeg", "-y", "-i", input_file,
                 "-ss", str(inicio), "-to", str(fin),
@@ -93,7 +93,7 @@ def procesar_video():
                     if DISCORD_WEBHOOK_URL:
                         requests.post(
                             DISCORD_WEBHOOK_URL,
-                            data={"content": f"🎬 **Recorte {parte}** (Máxima calidad | {int(inicio)}s a {int(fin)}s):"},
+                            data={"content": f"🎬 **Recorte {parte}** (Máxima Calidad | {int(inicio)}s a {int(fin)}s):"},
                             files={"file": f}
                         )
                 clips_subidos += 1
@@ -104,11 +104,11 @@ def procesar_video():
             if parte > 20:
                 break
 
-        enviar_discord(f"🏁 Trabajo `{job_id}` finalizado — {clips_subidos} recortes listos para descargar.")
+        enviar_discord(f"🏁 Trabajo `{job_id}` finalizado — {clips_subidos} recortes subidos a Discord.")
         return jsonify({"ok": True, "partes": clips_subidos})
 
     except Exception as e:
-        enviar_discord(f"❌ Error: {str(e)}")
+        enviar_discord(f"❌ Error interno: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":

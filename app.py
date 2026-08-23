@@ -4,7 +4,6 @@ import math
 import requests
 import subprocess
 from flask import Flask, request, jsonify
-import yt_dlp
 
 app = Flask(__name__)
 
@@ -39,46 +38,32 @@ def get_video_duration(file_path):
     result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     return float(result.stdout.strip())
 
-def download_video_robust(url, output_path):
-    """Intenta descargar el video con múltiples clientes de yt-dlp para saltar bloqueos de 'Sign in to confirm'."""
-    clients_to_try = [
-        ['ios'],
-        ['android_creator'],
-        ['mweb'],
-        ['tv_embedded', 'android']
-    ]
+def download_via_cobalt(url, output_path):
+    """Descarga el video usando la API pública de Cobalt para evitar bloqueos de IP de YouTube."""
+    api_url = "https://api.cobalt.tools/"
+    payload = {
+        "url": url,
+        "videoQuality": "720"
+    }
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json"
+    }
 
-    last_error = None
+    response = requests.post(api_url, json=payload, headers=headers, timeout=20)
+    data = response.json()
 
-    for client in clients_to_try:
-        ydl_opts = {
-            'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-            'outtmpl': output_path,
-            'extractor_args': {
-                'youtube': {
-                    'player_client': client,
-                    'player_skip': ['webpage', 'configs'],
-                }
-            },
-            'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
-                'Accept-Language': 'en-US,en;q=0.9',
-            },
-            'quiet': True,
-            'no_warnings': True,
-            'nocheckcertificate': True,
-        }
+    if response.status_code != 200 or "url" not in data:
+        raise Exception(f"Cobalt API error: {data.get('text', 'No se obtuvo enlace de descarga')}")
 
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([url])
-            if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
-                return  # Descarga exitosa
-        except Exception as e:
-            last_error = e
-            continue
+    download_url = data["url"]
 
-    raise Exception(f"Todos los intentos de descarga fallaron: {last_error}")
+    # Descargar el archivo de video generado
+    with requests.get(download_url, stream=True, timeout=120) as r:
+        r.raise_for_status()
+        with open(output_path, 'wb') as f:
+            for chunk in r.iter_content(chunk_size=16384):
+                f.write(chunk)
 
 @app.route('/', methods=['POST'])
 def process_videos():
@@ -93,24 +78,24 @@ def process_videos():
         return jsonify({"error": "No valid URL found"}), 400
 
     url = match.group(0).rstrip('}]",\'')
-    send_discord_log(f"⏳ Trabajo `{job_id}` — Descargando video para dividirlo en partes de {segment_duration}s...")
+    send_discord_log(f"⏳ Trabajo `{job_id}` — Descargando vía API externa para cortar en partes de {segment_duration}s...")
 
     downloaded_file = f"/tmp/downloaded_{job_id}.mp4"
 
     try:
-        # 1. Descargar video
-        download_video_robust(url, downloaded_file)
+        # 1. Descargar mediante la API de Cobalt
+        download_via_cobalt(url, downloaded_file)
 
-        if not os.path.exists(downloaded_file):
-            raise Exception("No se pudo obtener el archivo de video.")
+        if not os.path.exists(downloaded_file) or os.path.getsize(downloaded_file) == 0:
+            raise Exception("El archivo descargado está vacío o no existe.")
 
-        # 2. Calcular fragmentos de 40s
+        # 2. Calcular la duración total y dividir en partes de 40s
         total_duration = get_video_duration(downloaded_file)
         num_segments = math.ceil(total_duration / segment_duration)
 
-        send_discord_log(f"✂️ Trabajo `{job_id}` — Duración: {int(total_duration)}s. Generando **{num_segments} partes** de {segment_duration}s...")
+        send_discord_log(f"✂️ Trabajo `{job_id}` — Duración: {int(total_duration)}s. Procesando **{num_segments} partes** de {segment_duration}s...")
 
-        # 3. Cortar y subir cada parte
+        # 3. Cortar y subir secuencialmente a Discord
         for i in range(num_segments):
             start_sec = i * segment_duration
             part_number = i + 1
@@ -145,7 +130,7 @@ def process_videos():
         }), 200
 
     except Exception as e:
-        error_msg = f"❌ Trabajo `{job_id}` — Error en la división de video: {str(e)}"
+        error_msg = f"❌ Trabajo `{job_id}` — Error: {str(e)}"
         send_discord_log(error_msg)
 
         if os.path.exists(downloaded_file):

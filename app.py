@@ -3,6 +3,7 @@ import re
 import requests
 import subprocess
 from flask import Flask, request, jsonify
+import yt_dlp
 
 app = Flask(__name__)
 
@@ -27,25 +28,47 @@ def send_discord_file(file_path, caption=""):
         except Exception as e:
             print(f"Error file: {e}")
 
-def download_via_cobalt(url, download_path):
-    """Descarga el video utilizando la API pública de Cobalt sin bloqueos de IP."""
-    api_url = "https://api.cobalt.tools/api/json"
+def download_with_fallback(url, download_path):
+    # Intentar primero mediante yt-dlp usando clientes no bloqueados (TV/iOS)
+    ydl_opts = {
+        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+        'outtmpl': download_path,
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['tv_embedded', 'ios', 'android'],
+                'player_skip': ['webpage', 'configs'],
+            }
+        },
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+        },
+        'quiet': True,
+        'no_warnings': True,
+    }
+
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
+        if os.path.exists(download_path):
+            return
+    except Exception as yt_err:
+        print(f"yt-dlp falló, probando API v10: {yt_err}")
+
+    # Respaldo: API v10 de Cobalt (cobalt.tools)
+    cobalt_v10_url = "https://api.cobalt.tools/"
     headers = {
         "Accept": "application/json",
         "Content-Type": "application/json"
     }
-    payload = {
-        "url": url,
-        "videoQuality": "720"
-    }
-    
-    response = requests.post(api_url, json=payload, headers=headers, timeout=30)
-    data = response.json()
-    
+    payload = {"url": url}
+
+    res = requests.post(cobalt_v10_url, json=payload, headers=headers, timeout=30)
+    data = res.json()
     stream_url = data.get("url")
+
     if not stream_url:
-        raise Exception(f"Cobalt error: {data.get('text', 'No se obtuvo enlace de video')}")
-        
+        raise Exception("No se pudo extraer el video mediante ningún método disponible.")
+
     with requests.get(stream_url, stream=True, timeout=60) as r:
         r.raise_for_status()
         with open(download_path, 'wb') as f:
@@ -66,16 +89,14 @@ def process_videos():
         return jsonify({"error": "No valid URL found"}), 400
 
     url = match.group(0).rstrip('}]",\'')
-    send_discord_log(f"⏳ Trabajo `{job_id}` — Procesando URL vía Cobalt API: {url}")
+    send_discord_log(f"⏳ Trabajo `{job_id}` — Extrayendo video: {url}")
 
     downloaded_file = f"/tmp/downloaded_{job_id}.mp4"
 
     try:
-        # 1. Descarga vía Cobalt
-        download_via_cobalt(url, downloaded_file)
+        download_with_fallback(url, downloaded_file)
         output_file = downloaded_file
 
-        # 2. Recorte con FFmpeg (si hay tiempos)
         if start_time is not None and end_time is not None and int(end_time) > int(start_time):
             trimmed_file = f"/tmp/cut_{job_id}.mp4"
             send_discord_log(f"✂️ Trabajo `{job_id}` — Recortando ({start_time}s a {end_time}s)...")
@@ -96,8 +117,7 @@ def process_videos():
 
             output_file = trimmed_file
 
-        # 3. Envío a Discord
-        caption = f"🎬 **Trabajo {job_id}** — Recorte/Descarga completada con éxito."
+        caption = f"🎬 **Trabajo {job_id}** — Recorte completado con éxito."
         send_discord_file(output_file, caption=caption)
 
         if os.path.exists(output_file):

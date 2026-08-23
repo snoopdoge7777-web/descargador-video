@@ -32,7 +32,7 @@ def procesar_video():
     urls = data.get("urls") or data.get("url")
     job_id = data.get("job_id", "desconocido")
     
-    duracion_fragmento = 60  # Duración de cada parte (60 segundos)
+    duracion_fragmento = 60  # Recorte de 60 segundos por parte
 
     if isinstance(urls, str):
         urls = [urls]
@@ -40,25 +40,25 @@ def procesar_video():
         return jsonify({"error": "No URL provided"}), 400
 
     url = urls[0] if isinstance(urls, list) else urls
-    enviar_discord(f"⏳ Trabajo `{job_id}` iniciado — Descargando video con cliente Safari...")
+    enviar_discord(f"⏳ Trabajo `{job_id}` iniciado — Descargando video...")
 
     try:
         input_file = "video_original.mp4"
         if os.path.exists(input_file):
             os.remove(input_file)
 
-        # Descarga con el parámetro anti-bot actualizado para evadir el bloqueo
+        # Comando yt-dlp usando formato básico para evitar bloqueos
         cmd_dl = [
-            "yt-dlp", 
-            "--extractor-args", "youtube:player_client=web_safari",
-            "-f", "b[ext=mp4]/b",
-            "-o", input_file, 
+            "yt-dlp",
+            "--no-check-certificates",
+            "-f", "best[ext=mp4]/best",
+            "-o", input_file,
             url
         ]
         resultado = subprocess.run(cmd_dl, capture_output=True, text=True)
 
         if resultado.returncode != 0 or not os.path.exists(input_file):
-            enviar_discord(f"❌ Error al descargar: {resultado.stderr[:150]}")
+            enviar_discord(f"❌ Error descargando: {resultado.stderr[:200]}")
             return jsonify({"error": "Download failed"}), 500
 
         duracion_total = obtener_duracion(input_file)
@@ -69,7 +69,7 @@ def procesar_video():
         inicio = 0
         parte = 1
 
-        # Cortar en bucle cada 60 segundos
+        # Cortar en trozos de 60 segundos
         while inicio < duracion_total:
             output_file = f"parte_{parte}.mp4"
             if os.path.exists(output_file):
@@ -91,7 +91,7 @@ def procesar_video():
                     if DISCORD_WEBHOOK_URL:
                         requests.post(
                             DISCORD_WEBHOOK_URL,
-                            data={"content": f"🎬 **Parte {parte}** (Desde {int(inicio)}s hasta {int(fin)}s):"},
+                            data={"content": f"🎬 **Parte {parte}** ({int(inicio)}s a {int(fin)}s):"},
                             files={"file": f}
                         )
                 clips_subidos += 1
@@ -99,14 +99,14 @@ def procesar_video():
 
             inicio += duracion_fragmento
             parte += 1
-            if parte > 25:  # Límite de seguridad
+            if parte > 20:
                 break
 
-        enviar_discord(f"🏁 Trabajo `{job_id}` finalizado — Se enviaron {clips_subidos} partes a Discord.")
+        enviar_discord(f"🏁 Trabajo `{job_id}` finalizado — {clips_subidos} partes enviadas.")
         return jsonify({"ok": True, "partes": clips_subidos})
 
     except Exception as e:
-        enviar_discord(f"❌ Error interno: {str(e)}")
+        enviar_discord(f"❌ Error: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":

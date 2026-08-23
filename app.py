@@ -1,7 +1,7 @@
 import os
 import subprocess
-from flask import Flask, request, jsonify
 import requests
+from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
@@ -12,7 +12,7 @@ def enviar_discord(mensaje):
         try:
             requests.post(DISCORD_WEBHOOK_URL, json={"content": mensaje})
         except Exception as e:
-            print(f"Error enviando a Discord: {e}")
+            print(f"Error Discord: {e}")
 
 def obtener_duracion(input_file):
     try:
@@ -21,8 +21,8 @@ def obtener_duracion(input_file):
             "format=duration", "-of",
             "default=noprint_wrappers=1:nokey=1", input_file
         ]
-        resultado = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        return float(resultado.stdout.strip())
+        res = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        return float(res.stdout.strip())
     except Exception:
         return 0.0
 
@@ -31,55 +31,58 @@ def procesar_video():
     data = request.get_json() or {}
     urls = data.get("urls") or data.get("url")
     job_id = data.get("job_id", "desconocido")
-    
-    duracion_fragmento = 60  # Segundos por cada fragmento
+    duracion_fragmento = 60  # Recortes de 60 segundos
 
-    if isinstance(urls, str):
-        urls = [urls]
-    if not urls:
+    if isinstance(urls, list):
+        url = urls[0] if urls else None
+    else:
+        url = urls
+
+    if not url:
         return jsonify({"error": "No URL provided"}), 400
 
-    url = urls[0] if isinstance(urls, list) else urls
-    enviar_discord(f"⏳ Trabajo `{job_id}` iniciado — Descargando video...")
+    enviar_discord(f"⏳ Trabajo `{job_id}` — Extrayendo video en máxima calidad vía Cobalt API...")
 
     try:
         input_file = "video_original.mp4"
         if os.path.exists(input_file):
             os.remove(input_file)
 
-        cmd_dl = [
-            "yt-dlp",
-            "--extractor-args", "youtube:player_client=android_creator,web",
-            "--no-check-certificates",
-            "-f", "b[ext=mp4]/b",
-            "-o", input_file,
-            url
-        ]
-        resultado = subprocess.run(cmd_dl, capture_output=True, text=True)
+        # Petición a Cobalt API para obtener el enlace directo en máxima calidad
+        headers = {"Accept": "application/json", "Content-Type": "application/json"}
+        payload = {"url": url, "videoQuality": "max"}
+        resp = requests.post("https://api.cobalt.tools/api/json", json=payload, headers=headers)
+        
+        if resp.status_code != 200 or "url" not in resp.json():
+            enviar_discord(f"❌ Error al obtener stream de Cobalt.")
+            return jsonify({"error": "Cobalt API failed"}), 500
 
-        if resultado.returncode != 0 or not os.path.exists(input_file):
-            enviar_discord(f"❌ Error descargando: {resultado.stderr[:200]}")
-            return jsonify({"error": "Download failed"}), 500
+        stream_url = resp.json()["url"]
+
+        # Descarga directa del stream MP4
+        with requests.get(stream_url, stream=True) as r:
+            r.raise_for_status()
+            with open(input_file, "wb") as f:
+                for chunk in r.iter_content(chunk_size=8192):
+                    f.write(chunk)
 
         duracion_total = obtener_duracion(input_file)
-        if duracion_total <= 0:
-            return jsonify({"error": "Duration failed"}), 500
-
         clips_subidos = 0
         inicio = 0
         parte = 1
 
+        # Generar múltiples recortes en calidad máxima (sin pérdida de calidad)
         while inicio < duracion_total:
-            output_file = f"parte_{parte}.mp4"
+            output_file = f"corte_{parte}.mp4"
             if os.path.exists(output_file):
                 os.remove(output_file)
 
             fin = min(inicio + duracion_fragmento, duracion_total)
 
+            # ffmpeg con copy evita recodificar para mantener calidad 100% original
             cmd_cut = [
                 "ffmpeg", "-y", "-i", input_file,
-                "-ss", str(inicio),
-                "-to", str(fin),
+                "-ss", str(inicio), "-to", str(fin),
                 "-c:v", "copy", "-c:a", "copy",
                 output_file
             ]
@@ -90,7 +93,7 @@ def procesar_video():
                     if DISCORD_WEBHOOK_URL:
                         requests.post(
                             DISCORD_WEBHOOK_URL,
-                            data={"content": f"🎬 **Parte {parte}** ({int(inicio)}s a {int(fin)}s):"},
+                            data={"content": f"🎬 **Recorte {parte}** (Máxima calidad | {int(inicio)}s a {int(fin)}s):"},
                             files={"file": f}
                         )
                 clips_subidos += 1
@@ -101,7 +104,7 @@ def procesar_video():
             if parte > 20:
                 break
 
-        enviar_discord(f"🏁 Trabajo `{job_id}` finalizado — {clips_subidos} partes enviadas.")
+        enviar_discord(f"🏁 Trabajo `{job_id}` finalizado — {clips_subidos} recortes listos para descargar.")
         return jsonify({"ok": True, "partes": clips_subidos})
 
     except Exception as e:

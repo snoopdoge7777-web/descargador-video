@@ -51,32 +51,48 @@ def process_videos():
         return jsonify({"error": "No valid URL found"}), 400
 
     url = match.group(0).rstrip('}]",\'')
-    send_discord_log(f"⏳ Trabajo `{job_id}` — Descargando con yt-dlp + Deno + Cookies para recortar en partes de {segment_duration}s...")
+    send_discord_log(f"⏳ Trabajo `{job_id}` — Descargando con yt-dlp para recortar en partes de {segment_duration}s...")
 
     downloaded_file = f"/tmp/downloaded_{job_id}.mp4"
 
-    # Buscar archivos de cookies disponibles en la carpeta raíz
+    # Verificar si existen cookies
     possible_cookies = [
         os.path.join(os.path.dirname(__file__), "www.youtube.com_cookies.txt"),
         os.path.join(os.path.dirname(__file__), "cookies.txt")
     ]
     cookie_path = next((p for p in possible_cookies if os.path.exists(p)), None)
 
+    # Intento 1: Usar cliente iOS/Android nativo (evita bloqueos de login e IP)
+    ytdlp_cmd = [
+        'yt-dlp',
+        '--js-runtimes', 'node',
+        '--extractor-args', 'youtube:player_client=ios,android,web',
+        '-f', 'b[ext=mp4]/best[ext=mp4]/best',
+        '-o', downloaded_file,
+        '--no-playlist'
+    ]
+
+    # Si hay cookies, las intentamos pasar pero permitimos fallback
+    if cookie_path:
+        ytdlp_cmd.extend(['--cookies', cookie_path])
+
+    ytdlp_cmd.append(url)
+
     try:
-        ytdlp_cmd = [
-            'yt-dlp',
-            '-f', 'b[ext=mp4]/best[ext=mp4]/best',
-            '-o', downloaded_file,
-            '--no-playlist'
-        ]
-
-        if cookie_path:
-            ytdlp_cmd.extend(['--cookies', cookie_path])
-            send_discord_log(f"🍪 Usando cookies: `{os.path.basename(cookie_path)}`")
-
-        ytdlp_cmd.append(url)
-
         result = subprocess.run(ytdlp_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+        # Si falla el intento con cookies/estándar, reintentamos en modo cliente móvil puro
+        if result.returncode != 0 or not os.path.exists(downloaded_file):
+            send_discord_log(f"⚠️ Reintentando descarga con cliente móvil alternativo...")
+            retry_cmd = [
+                'yt-dlp',
+                '--extractor-args', 'youtube:player_client=android,ios',
+                '-f', 'b[ext=mp4]/best[ext=mp4]/best',
+                '-o', downloaded_file,
+                '--no-playlist',
+                url
+            ]
+            result = subprocess.run(retry_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
         if result.returncode != 0 or not os.path.exists(downloaded_file):
             raise Exception(f"yt-dlp falló: {result.stderr}")
@@ -86,7 +102,7 @@ def process_videos():
 
         send_discord_log(f"✂️ Trabajo `{job_id}` — Duración total: {int(total_duration)}s. Generando **{num_segments} partes** de {segment_duration}s...")
 
-        # Recortar en partes de 40s y enviar
+        # Recortar y subir fragmentos a Discord
         for i in range(num_segments):
             start_sec = i * segment_duration
             part_number = i + 1
@@ -112,7 +128,7 @@ def process_videos():
         if os.path.exists(downloaded_file):
             os.remove(downloaded_file)
 
-        send_discord_log(f"✅ Trabajo `{job_id}` — ¡Proceso completado exitosamente!")
+        send_discord_log(f"✅ Trabajo `{job_id}` — ¡Proceso completado con éxito!")
 
         return jsonify({
             "status": "success",

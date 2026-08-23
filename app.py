@@ -6,19 +6,16 @@ import yt_dlp
 
 app = Flask(__name__)
 
-# Configuración del Webhook de Discord
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")
 
 def send_discord_log(message):
-    """Envía mensajes de texto de estado o error al canal de Discord."""
     if DISCORD_WEBHOOK_URL:
         try:
             requests.post(DISCORD_WEBHOOK_URL, json={"content": message})
         except Exception as e:
-            print(f"Error enviando log a Discord: {e}")
+            print(f"Error log: {e}")
 
 def send_discord_file(file_path, caption=""):
-    """Sube el archivo recortado directamente al canal de Discord."""
     if DISCORD_WEBHOOK_URL and os.path.exists(file_path):
         try:
             with open(file_path, 'rb') as f:
@@ -28,27 +25,26 @@ def send_discord_file(file_path, caption=""):
                     files={"file": (os.path.basename(file_path), f)}
                 )
         except Exception as e:
-            print(f"Error enviando archivo a Discord: {e}")
+            print(f"Error file: {e}")
 
 @app.route('/', methods=['POST'])
 def process_videos():
     data = request.get_json() or {}
     urls = data.get('urls', [])
     job_id = data.get('job_id', 'N/A')
-    
-    # Tiempos de corte opcionales en segundos (ejemplo: start_time=10, end_time=40)
-    start_time = data.get('start_time', None)
-    end_time = data.get('end_time', None)
 
     if not urls:
         return jsonify({"error": "No se proporcionaron URLs"}), 400
 
-    url_list = urls if isinstance(urls, list) else [urls]
+    # Obtener y limpiar la URL si viene mal formateada
+    raw_url = urls[0] if isinstance(urls, list) else urls
+    url = str(raw_url).replace('{', '').replace('}', '').replace('"', '').strip()
 
-    # Configuración de yt-dlp para evitar Error 429 y bloqueos de YouTube
+    send_discord_log(f"⏳ Trabajo `{job_id}` — Procesando video...")
+
     ydl_opts = {
         'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-        'outtmpl': '/tmp/downloaded_%(id)s.%(ext)s',
+        'outtmpl': '/tmp/%(id)s.%(ext)s',
         'extractor_args': {
             'youtube': {
                 'player_client': ['ios', 'mweb'],
@@ -62,61 +58,23 @@ def process_videos():
         'no_warnings': True,
     }
 
-    processed_files = []
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            downloaded_file = ydl.prepare_filename(info)
 
-    for idx, url in enumerate(url_list):
-        send_discord_log(f"⏳ Trabajo `{job_id}` — Procesando video {idx + 1}/{len(url_list)}...")
+        caption = f"🎬 **Trabajo {job_id}** — Video descargado."
+        send_discord_file(downloaded_file, caption=caption)
 
-        try:
-            # 1. Descarga del video
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                downloaded_file = ydl.prepare_filename(info)
+        if os.path.exists(downloaded_file):
+            os.remove(downloaded_file)
 
-            output_file = downloaded_file
+        return jsonify({"status": "success", "job_id": job_id}), 200
 
-            # 2. Recorte del video con FFmpeg (si se definieron start_time / end_time)
-            if start_time is not None and end_time is not None:
-                trimmed_file = f"/tmp/cut_{job_id}_{idx}.mp4"
-                send_discord_log(f"✂️ Trabajo `{job_id}` — Recortando video desde {start_time}s hasta {end_time}s...")
-                
-                ffmpeg_cmd = [
-                    'ffmpeg', '-y',
-                    '-ss', str(start_time),
-                    '-to', str(end_time),
-                    '-i', downloaded_file,
-                    '-c', 'copy',
-                    trimmed_file
-                ]
-                
-                subprocess.run(ffmpeg_cmd, check=True)
-                
-                # Borramos el video original completo para liberar espacio
-                if os.path.exists(downloaded_file):
-                    os.remove(downloaded_file)
-                
-                output_file = trimmed_file
-
-            # 3. Subir el video recortado a Discord
-            caption = f"🎬 **Trabajo {job_id}** — Recorte completado con éxito."
-            send_discord_file(output_file, caption=caption)
-            
-            processed_files.append(output_file)
-
-            # Limpiar archivo temporal enviado
-            if os.path.exists(output_file):
-                os.remove(output_file)
-
-        except Exception as e:
-            error_msg = f"❌ Trabajo `{job_id}` — Error en el video {url}: {str(e)}"
-            send_discord_log(error_msg)
-            return jsonify({"error": "Processing failed", "details": str(e)}), 500
-
-    return jsonify({
-        "status": "success",
-        "job_id": job_id,
-        "processed_count": len(processed_files)
-    }), 200
+    except Exception as e:
+        error_msg = f"❌ Trabajo `{job_id}` — Error: {str(e)}"
+        send_discord_log(error_msg)
+        return jsonify({"error": "Processing failed", "details": str(e)}), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))

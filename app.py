@@ -4,6 +4,7 @@ import math
 import requests
 import subprocess
 from flask import Flask, request, jsonify
+from pytubefix import YouTube
 
 app = Flask(__name__)
 
@@ -38,33 +39,6 @@ def get_video_duration(file_path):
     result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     return float(result.stdout.strip())
 
-def download_via_cobalt(url, output_path):
-    """Descarga el video usando la API pública de Cobalt para evitar bloqueos de IP de YouTube."""
-    api_url = "https://api.cobalt.tools/"
-    payload = {
-        "url": url,
-        "videoQuality": "720"
-    }
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json"
-    }
-
-    response = requests.post(api_url, json=payload, headers=headers, timeout=20)
-    data = response.json()
-
-    if response.status_code != 200 or "url" not in data:
-        raise Exception(f"Cobalt API error: {data.get('text', 'No se obtuvo enlace de descarga')}")
-
-    download_url = data["url"]
-
-    # Descargar el archivo de video generado
-    with requests.get(download_url, stream=True, timeout=120) as r:
-        r.raise_for_status()
-        with open(output_path, 'wb') as f:
-            for chunk in r.iter_content(chunk_size=16384):
-                f.write(chunk)
-
 @app.route('/', methods=['POST'])
 def process_videos():
     data = request.get_json() or {}
@@ -78,24 +52,29 @@ def process_videos():
         return jsonify({"error": "No valid URL found"}), 400
 
     url = match.group(0).rstrip('}]",\'')
-    send_discord_log(f"⏳ Trabajo `{job_id}` — Descargando vía API externa para cortar en partes de {segment_duration}s...")
+    send_discord_log(f"⏳ Trabajo `{job_id}` — Descargando con PyTubeFix para recortar en partes de {segment_duration}s...")
 
     downloaded_file = f"/tmp/downloaded_{job_id}.mp4"
 
     try:
-        # 1. Descargar mediante la API de Cobalt
-        download_via_cobalt(url, downloaded_file)
+        # Descarga el stream de YouTube emulando cliente de Android (sin bloqueo BotGuard)
+        yt = YouTube(url, client='ANDROID')
+        stream = yt.streams.filter(progressive=True, file_extension='mp4').order_by('resolution').desc().first()
+        
+        if not stream:
+            stream = yt.streams.filter(file_extension='mp4').first()
 
-        if not os.path.exists(downloaded_file) or os.path.getsize(downloaded_file) == 0:
-            raise Exception("El archivo descargado está vacío o no existe.")
+        stream.download(output_path="/tmp", filename=f"downloaded_{job_id}.mp4")
 
-        # 2. Calcular la duración total y dividir en partes de 40s
+        if not os.path.exists(downloaded_file):
+            raise Exception("No se pudo obtener el archivo descargado.")
+
         total_duration = get_video_duration(downloaded_file)
         num_segments = math.ceil(total_duration / segment_duration)
 
-        send_discord_log(f"✂️ Trabajo `{job_id}` — Duración: {int(total_duration)}s. Procesando **{num_segments} partes** de {segment_duration}s...")
+        send_discord_log(f"✂️ Trabajo `{job_id}` — Duración total: {int(total_duration)}s. Generando **{num_segments} partes** de {segment_duration}s...")
 
-        # 3. Cortar y subir secuencialmente a Discord
+        # Recorta y sube secuencialmente los fragmentos
         for i in range(num_segments):
             start_sec = i * segment_duration
             part_number = i + 1
@@ -121,7 +100,7 @@ def process_videos():
         if os.path.exists(downloaded_file):
             os.remove(downloaded_file)
 
-        send_discord_log(f"✅ Trabajo `{job_id}` — ¡Proceso completado! Se enviaron las {num_segments} partes a Discord.")
+        send_discord_log(f"✅ Trabajo `{job_id}` — ¡Proceso completado con éxito!")
 
         return jsonify({
             "status": "success",

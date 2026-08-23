@@ -1,7 +1,8 @@
 """
 app.py
 
-Microservicio completo de recorte automático de YouTube con soporte de Cookies para Render.
+Microservicio completo de recorte automático de YouTube con soporte de Cookies 
+y cliente móvil para evadir bloqueos de bot en Render.
 """
 
 import os
@@ -54,7 +55,7 @@ def enviar_archivo_a_discord(ruta: Path, mensaje: str) -> str:
 
 
 # ----------------------------------------------------------------------
-# Descarga: yt-dlp primero (con cookies), pytubefix como respaldo
+# Descarga: yt-dlp primero (con cookies y cliente móvil), pytubefix respaldo
 # ----------------------------------------------------------------------
 
 def validar_url(url: str):
@@ -77,6 +78,7 @@ def descargar_video(url: str, destino: Path):
     comando = [
         "yt-dlp",
         "-f", "bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[ext=mp4]/b",
+        "--extractor-args", "youtube:player_client=android,web",
         "--no-playlist",
         "-o", str(destino),
     ]

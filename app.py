@@ -252,6 +252,7 @@ def procesar():
     )
 
     resultados_totales = []
+    errores_totales = []
     contador_global = 1
 
     for idx, url in enumerate(urls):
@@ -269,7 +270,9 @@ def procesar():
             )
 
             if not segmentos:
-                enviar_a_discord(f"⚠️ Trabajo `{job_id}` — no se detectaron cortes en {url}")
+                mensaje_error = f"No se detectaron cortes en {url}"
+                errores_totales.append({"url": url, "error": mensaje_error})
+                enviar_a_discord(f"⚠️ Trabajo `{job_id}` — {mensaje_error}")
                 continue
 
             if len(segmentos) > max_clips:
@@ -324,6 +327,7 @@ def procesar():
                 contador_global += 1
 
         except Exception as e:
+            errores_totales.append({"url": url, "error": str(e)})
             enviar_a_discord(f"❌ Trabajo `{job_id}` — error con {url}: {e}")
 
         finally:
@@ -338,7 +342,12 @@ def procesar():
         f"Revisalos y publicá los que quieras."
     )
 
-    return jsonify({"ok": True, "job_id": job_id, "clips": resultados_totales})
+    return jsonify({
+        "ok": True,
+        "job_id": job_id,
+        "clips": resultados_totales,
+        "errores": errores_totales,
+    })
 
 
 # ----------------------------------------------------------------------

@@ -1,5 +1,5 @@
 """
-app.py - Microservicio automático de recorte deYouTube.
+app.py - Microservicio automático de recorte de YouTube.
 """
 
 import os
@@ -172,7 +172,6 @@ def procesar():
 
     data = request.get_json(force=True, silent=True) or {}
 
-    # Capturamos parámetros tanto si vienen por la URL (GET) como por JSON (POST)
     urls_param = request.args.get("url") or data.get("urls") or data.get("url")
     if isinstance(urls_param, str):
         urls = [urls_param]

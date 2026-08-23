@@ -1,6 +1,6 @@
 FROM python:3.10-slim
 
-# Instalar ffmpeg y dependencias del sistema
+# Instalar ffmpeg y dependencias del sistemañ
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*

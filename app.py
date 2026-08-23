@@ -40,17 +40,17 @@ def procesar_video():
         return jsonify({"error": "No URL provided"}), 400
 
     url = urls[0] if isinstance(urls, list) else urls
-    enviar_discord(f"⏳ Trabajo `{job_id}` iniciado — Descargando video para recortar en partes.")
+    enviar_discord(f"⏳ Trabajo `{job_id}` iniciado — Descargando video con cliente Safari...")
 
     try:
         input_file = "video_original.mp4"
         if os.path.exists(input_file):
             os.remove(input_file)
 
-        # Descarga robusta usando yt-dlp con formato compatible
+        # Descarga con el parámetro anti-bot actualizado para evadir el bloqueo
         cmd_dl = [
             "yt-dlp", 
-            "--extractor-args", "youtube:player_client=android,web",
+            "--extractor-args", "youtube:player_client=web_safari",
             "-f", "b[ext=mp4]/b",
             "-o", input_file, 
             url
@@ -58,7 +58,7 @@ def procesar_video():
         resultado = subprocess.run(cmd_dl, capture_output=True, text=True)
 
         if resultado.returncode != 0 or not os.path.exists(input_file):
-            enviar_discord(f"❌ Error al descargar con yt-dlp.")
+            enviar_discord(f"❌ Error al descargar: {resultado.stderr[:150]}")
             return jsonify({"error": "Download failed"}), 500
 
         duracion_total = obtener_duracion(input_file)

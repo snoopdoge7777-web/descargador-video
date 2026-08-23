@@ -7,19 +7,16 @@ import yt_dlp
 
 app = Flask(__name__)
 
-# Configuración del Webhook de Discord
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")
 
 def send_discord_log(message):
-    """Envía mensajes de estado o error al canal de Discord."""
     if DISCORD_WEBHOOK_URL:
         try:
             requests.post(DISCORD_WEBHOOK_URL, json={"content": message})
         except Exception as e:
-            print(f"Error enviando log a Discord: {e}")
+            print(f"Error log: {e}")
 
 def send_discord_file(file_path, caption=""):
-    """Sube el archivo final a Discord."""
     if DISCORD_WEBHOOK_URL and os.path.exists(file_path):
         try:
             with open(file_path, 'rb') as f:
@@ -29,7 +26,7 @@ def send_discord_file(file_path, caption=""):
                     files={"file": (os.path.basename(file_path), f)}
                 )
         except Exception as e:
-            print(f"Error enviando archivo a Discord: {e}")
+            print(f"Error file: {e}")
 
 @app.route('/', methods=['POST'])
 def process_videos():
@@ -39,42 +36,42 @@ def process_videos():
     start_time = data.get('start_time', None)
     end_time = data.get('end_time', None)
 
-    # Extrae la primera URL limpia válida (http/https) ignorando llaves, comillas y formato raro de n8n
     match = re.search(r'https?://[^\s\'"\}]+', str(raw_urls))
 
     if not match:
-        send_discord_log(f"❌ Trabajo `{job_id}` — No se encontró una URL válida en el payload: `{raw_urls}`")
+        send_discord_log(f"❌ Trabajo `{job_id}` — No se encontró una URL válida en: `{raw_urls}`")
         return jsonify({"error": "No valid URL found"}), 400
 
     url = match.group(0).rstrip('}]",\'')
     send_discord_log(f"⏳ Trabajo `{job_id}` — Procesando URL: {url}")
 
-    # Opciones de yt-dlp para omitir bloqueos y límite de peticiones (Error 429)
+    # Configuración anti-bloqueo avanzada para yt-dlp
     ydl_opts = {
-        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+        'format': 'best',
         'outtmpl': '/tmp/downloaded_%(id)s.%(ext)s',
         'extractor_args': {
             'youtube': {
-                'player_client': ['ios', 'mweb'],
+                'player_client': ['android', 'ios'],
                 'player_skip': ['webpage', 'configs'],
             }
         },
         'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept-Language': 'en-US,en;q=0.9',
         },
+        'nocheckcertificate': True,
+        'ignoreerrors': False,
         'quiet': True,
         'no_warnings': True,
     }
 
     try:
-        # 1. Descarga del video
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
             downloaded_file = ydl.prepare_filename(info)
 
         output_file = downloaded_file
 
-        # 2. Recorte del video con FFmpeg (si se pasaron start_time y end_time)
         if start_time is not None and end_time is not None:
             trimmed_file = f"/tmp/cut_{job_id}.mp4"
             send_discord_log(f"✂️ Trabajo `{job_id}` — Recortando video ({start_time}s a {end_time}s)...")
@@ -95,18 +92,16 @@ def process_videos():
 
             output_file = trimmed_file
 
-        # 3. Subir a Discord
-        caption = f"🎬 **Trabajo {job_id}** — Procesado y enviado con éxito."
+        caption = f"🎬 **Trabajo {job_id}** — Video procesado y enviado."
         send_discord_file(output_file, caption=caption)
 
-        # Limpiar archivo local
         if os.path.exists(output_file):
             os.remove(output_file)
 
         return jsonify({"status": "success", "job_id": job_id}), 200
 
     except Exception as e:
-        error_msg = f"❌ Trabajo `{job_id}` — Error en la descarga/procesamiento: {str(e)}"
+        error_msg = f"❌ Trabajo `{job_id}` — Error en la descarga: {str(e)}"
         send_discord_log(error_msg)
         return jsonify({"error": "Processing failed", "details": str(e)}), 500
 

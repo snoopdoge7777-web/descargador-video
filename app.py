@@ -1,6 +1,5 @@
 import os
 import subprocess
-import math
 from flask import Flask, request, jsonify
 import requests
 
@@ -30,45 +29,41 @@ def obtener_duracion(input_file):
 @app.route("/", methods=["POST"])
 def procesar_video():
     data = request.get_json() or {}
-    url = data.get("url") or data.get("urls")
+    urls = data.get("urls") or data.get("url")
     job_id = data.get("job_id", "desconocido")
     
-    # Duración de cada fragmento en segundos (por defecto 60 segundos = 1 minuto)
-    duracion_fragmento = int(data.get("duracion", 60))
+    duracion_fragmento = 60  # Cortar cada 1 minuto
 
-    if isinstance(url, list):
-        url = url[0] if url else None
-
-    if not url:
+    if isinstance(urls, str):
+        urls = [urls]
+    if not urls:
         return jsonify({"error": "No URL provided"}), 400
 
-    enviar_discord(f"⏳ Trabajo `{job_id}` iniciado — Descargando y dividiendo en fragmentos de {duracion_fragmento}s.")
+    url = urls[0] if isinstance(urls, list) else urls
+    enviar_discord(f"⏳ Trabajo `{job_id}` iniciado — Procesando video en partes de 1 min.")
 
     try:
         input_file = "video_original.mp4"
-
         if os.path.exists(input_file):
             os.remove(input_file)
 
-        # 1. Descargar el video
+        # Descargar video
         cmd_dl = ["yt-dlp", "--extractor-args", "youtube:player_client=default", "-f", "best[ext=mp4]/best", "-o", input_file, url]
         resultado = subprocess.run(cmd_dl, capture_output=True, text=True)
 
         if resultado.returncode != 0:
-            enviar_discord(f"❌ Error descargando `{url}`: {resultado.stderr[:200]}")
+            enviar_discord(f"❌ Error descargando video.")
             return jsonify({"error": "Download failed"}), 500
 
-        # 2. Obtener la duración total del video
         duracion_total = obtener_duracion(input_file)
         if duracion_total <= 0:
-            enviar_discord(f"❌ No se pudo determinar la duración del video.")
             return jsonify({"error": "Duration failed"}), 500
 
         clips_subidos = 0
         inicio = 0
         parte = 1
 
-        # 3. Bucle para cortar el video en partes de X segundos hasta que termine
+        # Cortar en bucle cada 60 segundos
         while inicio < duracion_total:
             output_file = f"parte_{parte}.mp4"
             if os.path.exists(output_file):
@@ -80,17 +75,17 @@ def procesar_video():
                 "ffmpeg", "-y", "-i", input_file,
                 "-ss", str(inicio),
                 "-to", str(fin),
-                "-c:v", "libx264", "-c:a", "aac",
+                "-c:v", "copy", "-c:a", "copy",
                 output_file
             ]
-            res_cut = subprocess.run(cmd_cut, capture_output=True, text=True)
+            subprocess.run(cmd_cut, capture_output=True, text=True)
 
-            if res_cut.returncode == 0 and os.path.exists(output_file):
+            if os.path.exists(output_file) and os.path.getsize(output_file) > 0:
                 with open(output_file, "rb") as f:
                     if DISCORD_WEBHOOK_URL:
                         requests.post(
                             DISCORD_WEBHOOK_URL,
-                            data={"content": f"🎬 **Parte {parte}** (Desde {int(inicio)}s hasta {int(fin)}s):"},
+                            data={"content": f"🎬 **Parte {parte}** (Minuto {int(inicio//60)}):"},
                             files={"file": f}
                         )
                 clips_subidos += 1
@@ -98,12 +93,14 @@ def procesar_video():
 
             inicio += duracion_fragmento
             parte += 1
+            if parte > 20:  # Límite de seguridad para evitar bucles infinitos en videos muy largos
+                break
 
-        enviar_discord(f"🏁 Trabajo `{job_id}` finalizado — Se enviaron {clips_subidos} partes a Discord.")
-        return jsonify({"ok": True, "job_id": job_id, "partes": clips_subidos})
+        enviar_discord(f"🏁 Trabajo `{job_id}` finalizado — {clips_subidos} partes enviadas.")
+        return jsonify({"ok": True, "partes": clips_subidos})
 
     except Exception as e:
-        enviar_discord(f"❌ Excepción: {str(e)}")
+        enviar_discord(f"❌ Error interno: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":

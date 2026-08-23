@@ -14,7 +14,7 @@ def send_discord_log(message):
         try:
             requests.post(DISCORD_WEBHOOK_URL, json={"content": message})
         except Exception as e:
-            print(f"Error enviando log: {e}")
+            print(f"Error log: {e}")
 
 def send_discord_file(file_path, caption=""):
     if DISCORD_WEBHOOK_URL and os.path.exists(file_path):
@@ -51,19 +51,30 @@ def process_videos():
         return jsonify({"error": "No valid URL found"}), 400
 
     url = match.group(0).rstrip('}]",\'')
-    send_discord_log(f"⏳ Trabajo `{job_id}` — Descargando con yt-dlp para recortar en partes de {segment_duration}s...")
+    send_discord_log(f"⏳ Trabajo `{job_id}` — Descargando con yt-dlp + Deno + Cookies para recortar en partes de {segment_duration}s...")
 
     downloaded_file = f"/tmp/downloaded_{job_id}.mp4"
 
+    # Buscar archivos de cookies disponibles en la carpeta raíz
+    possible_cookies = [
+        os.path.join(os.path.dirname(__file__), "www.youtube.com_cookies.txt"),
+        os.path.join(os.path.dirname(__file__), "cookies.txt")
+    ]
+    cookie_path = next((p for p in possible_cookies if os.path.exists(p)), None)
+
     try:
-        # Comando yt-dlp para descargar formato compatible rápido en 720p o menor
         ytdlp_cmd = [
             'yt-dlp',
             '-f', 'b[ext=mp4]/best[ext=mp4]/best',
             '-o', downloaded_file,
-            '--no-playlist',
-            url
+            '--no-playlist'
         ]
+
+        if cookie_path:
+            ytdlp_cmd.extend(['--cookies', cookie_path])
+            send_discord_log(f"🍪 Usando cookies: `{os.path.basename(cookie_path)}`")
+
+        ytdlp_cmd.append(url)
 
         result = subprocess.run(ytdlp_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
@@ -75,7 +86,7 @@ def process_videos():
 
         send_discord_log(f"✂️ Trabajo `{job_id}` — Duración total: {int(total_duration)}s. Generando **{num_segments} partes** de {segment_duration}s...")
 
-        # Recortar y subir fragmentos
+        # Recortar en partes de 40s y enviar
         for i in range(num_segments):
             start_sec = i * segment_duration
             part_number = i + 1
@@ -101,7 +112,7 @@ def process_videos():
         if os.path.exists(downloaded_file):
             os.remove(downloaded_file)
 
-        send_discord_log(f"✅ Trabajo `{job_id}` — ¡Proceso completado con éxito!")
+        send_discord_log(f"✅ Trabajo `{job_id}` — ¡Proceso completado exitosamente!")
 
         return jsonify({
             "status": "success",

@@ -1,5 +1,5 @@
 """
-app.py - Microservicio automático de recorte de YouTube.
+app.py - Microservicio automático de recorte deYouTube.
 """
 
 import os

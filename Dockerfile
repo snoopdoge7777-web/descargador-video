@@ -1,22 +1,15 @@
 FROM python:3.11-slim
 
-# Instalar ffmpeg, nodejs y ca-certificates
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg \
-    nodejs \
-    ca-certificates \
+# ffmpeg no viene con Python, se instala del sistema
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Copiar requerimientos e instalar
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copiar el proyecto completo
-COPY . .
+COPY app.py .
 
-ENV PORT=10000
-EXPOSE 10000
-
+# Render/Railway inyectan la variable PORT automáticamente
 CMD ["python", "app.py"]

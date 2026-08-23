@@ -1,9 +1,16 @@
-FROM python:3.10-slim
+FROM python:3.11-slim
 
-# Instalar ffmpeg y dependencias del sistemañ
+# Instalar ffmpeg, curl, ca-certificates y dependencias del sistema
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
+    curl \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+
+# Instalar Deno (Runtime JavaScript para resolver firmas de YouTube)
+RUN curl -fsSL https://deno.land/x/install/install.sh | sh
+ENV DENO_INSTALL="/root/.deno"
+ENV PATH="$DENO_INSTALL/bin:$PATH"
 
 WORKDIR /app
 
@@ -11,7 +18,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copiar el resto del código
+# Copiar el proyecto
 COPY . .
 
 ENV PORT=10000

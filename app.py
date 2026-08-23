@@ -32,7 +32,7 @@ def procesar_video():
     urls = data.get("urls") or data.get("url")
     job_id = data.get("job_id", "desconocido")
     
-    duracion_fragmento = 60  # Recorte de 60 segundos por parte
+    duracion_fragmento = 60  # Segundos por cada fragmento
 
     if isinstance(urls, str):
         urls = [urls]
@@ -40,18 +40,19 @@ def procesar_video():
         return jsonify({"error": "No URL provided"}), 400
 
     url = urls[0] if isinstance(urls, list) else urls
-    enviar_discord(f"⏳ Trabajo `{job_id}` iniciado — Descargando video...")
+    enviar_discord(f"⏳ Trabajo `{job_id}` iniciado — Descargando video por motor alternativo...")
 
     try:
         input_file = "video_original.mp4"
         if os.path.exists(input_file):
             os.remove(input_file)
 
-        # Comando yt-dlp usando formato básico para evitar bloqueos
+        # Usamos el cliente android_creator para evadir el bloqueo de IP de Render
         cmd_dl = [
             "yt-dlp",
+            "--extractor-args", "youtube:player_client=android_creator,web",
             "--no-check-certificates",
-            "-f", "best[ext=mp4]/best",
+            "-f", "b[ext=mp4]/b",
             "-o", input_file,
             url
         ]
@@ -69,7 +70,7 @@ def procesar_video():
         inicio = 0
         parte = 1
 
-        # Cortar en trozos de 60 segundos
+        # Generar cortes de 60 segundos
         while inicio < duracion_total:
             output_file = f"parte_{parte}.mp4"
             if os.path.exists(output_file):

@@ -15,5 +15,5 @@ RUN pip install --no-cache-dir --upgrade yt-dlp
 COPY app.py .
 COPY youtube_uploader.py .
 
-# Render inyecta la variable PORT automáticamente
-CMD ["python", "app.py"]
+# Render inyecta la variable PORT automáticamente y Gunicorn levanta la app de producción
+CMD sh -c "gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 120"

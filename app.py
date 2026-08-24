@@ -33,17 +33,14 @@ def process_video():
 
     output_filename = f"/tmp/{video_title}.mp4"
 
-    # Configuración anti-bloqueos para YouTube
+    # Selección de formato directa y universal
     ydl_opts = {
-        'format': 'best',
+        'format': 'bestvideo+bestaudio/best',
         'outtmpl': output_filename,
+        'merge_output_format': 'mp4',
         'quiet': True,
         'no_warnings': True,
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['ios', 'mweb']
-            }
-        }
+        'nocheckcertificate': True
     }
 
     if setup_cookies():
@@ -64,13 +61,14 @@ def process_video():
             uploaded_file = service.files().create(body=file_metadata, media_body=media, fields='id').execute()
             file_id = uploaded_file.get('id')
 
+        # Limpieza
         for temp_file in [output_filename, COOKIES_PATH]:
             if os.path.exists(temp_file):
                 os.remove(temp_file)
 
         return jsonify({
             "status": "success",
-            "message": "Video procesado con éxito",
+            "message": "Video descargado correctamente",
             "file_id": file_id
         }), 200
 

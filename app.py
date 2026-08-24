@@ -4,7 +4,6 @@ from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
-# Cargar cookies dinámicamente si están en las variables de entorno de Render
 COOKIES_PATH = "www.youtube.com_cookies.txt"
 cookies_env = os.environ.get("COOKIES_CONTENT")
 if cookies_env:
@@ -22,7 +21,6 @@ def procesar_video():
     raw_video = "downloaded.mp4"
 
     try:
-        # 1. Descargar el video de YouTube usando yt-dlp y las cookies configuradas
         ydl_command = [
             "yt-dlp",
             "--cookies", COOKIES_PATH,
@@ -35,8 +33,6 @@ def procesar_video():
         if result.returncode != 0:
             return jsonify({"ok": False, "error": f"Falla en la descarga con yt-dlp: {result.stderr}"}), 500
 
-        # 2. Procesar y recortar partes usando FFmpeg (ejemplo de optimización de corte o silencio)
-        # Aquí puedes ajustar los filtros de FFmpeg o dejarlo preparado para unir partes
         process_command = [
             "ffmpeg", "-y", "-i", raw_video,
             "-vf", "silenceremove=stop_periods=-1:stop_duration=1:stop_threshold=-30dB",

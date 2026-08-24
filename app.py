@@ -33,16 +33,15 @@ def process_video():
 
     output_filename = f"/tmp/{video_title}.mp4"
 
-    # Configuración flexible de formato para yt-dlp
+    # Configuración anti-bloqueos para YouTube
     ydl_opts = {
-        'format': 'b/bv*+ba/best',
+        'format': 'best',
         'outtmpl': output_filename,
-        'merge_output_format': 'mp4',
         'quiet': True,
         'no_warnings': True,
         'extractor_args': {
             'youtube': {
-                'player_client': ['android', 'web']
+                'player_client': ['ios', 'mweb']
             }
         }
     }
@@ -65,14 +64,13 @@ def process_video():
             uploaded_file = service.files().create(body=file_metadata, media_body=media, fields='id').execute()
             file_id = uploaded_file.get('id')
 
-        # Limpieza de archivos temporales
         for temp_file in [output_filename, COOKIES_PATH]:
             if os.path.exists(temp_file):
                 os.remove(temp_file)
 
         return jsonify({
             "status": "success",
-            "message": "Video descargado y procesado con éxito",
+            "message": "Video procesado con éxito",
             "file_id": file_id
         }), 200
 

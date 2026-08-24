@@ -34,7 +34,7 @@ def procesar_videos():
             raw_video = f"downloaded_{index}.mp4"
             output_filename = f"video_cortado_{index}.mp4"
 
-            # 1. Descargar el video usando yt-dlp con cookies y el motor de JavaScript de Node.js
+            # 1. Descargar el video usando yt-dlp con cookies y Node.js para resolver JavaScript
             ydl_command = [
                 "yt-dlp",
                 "--cookies", COOKIES_PATH,
@@ -51,7 +51,7 @@ def procesar_videos():
                     "error": f"Falla en la descarga del video {index+1} con yt-dlp: {result.stderr}"
                 }), 500
 
-            # 2. Cortar/procesar el video usando FFmpeg (aquí puedes ajustar los filtros si deseas)
+            # 2. Cortar silencios con FFmpeg
             process_command = [
                 "ffmpeg", "-y", "-i", raw_video,
                 "-vf", "silenceremove=stop_periods=-1:stop_duration=1:stop_threshold=-30dB",
@@ -65,10 +65,9 @@ def procesar_videos():
                     "error": f"Falla al procesar el video {index+1} con FFmpeg: {proc_result.stderr}"
                 }), 500
 
-            # Guardar el nombre del archivo exitoso en la lista
             videos_procesados.append(output_filename)
 
-            # Limpiar el archivo crudo temporal para ahorrar espacio
+            # Limpiar archivo temporal crudo
             if os.path.exists(raw_video):
                 os.remove(raw_video)
 

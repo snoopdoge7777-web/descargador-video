@@ -4,8 +4,9 @@ from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
-# Cargar cookies dinámicamente si están en las variables de entorno de Render
 COOKIES_PATH = "www.youtube.com_cookies.txt"
+
+# Cargar cookies de entorno únicamente si existen y tienen contenido
 cookies_env = os.environ.get("COOKIES_CONTENT")
 if cookies_env:
     with open(COOKIES_PATH, "w", encoding="utf-8") as f:
@@ -17,15 +18,14 @@ def procesar_videos():
     if not data:
         return jsonify({"ok": False, "error": "No se proporcionaron datos"}), 400
 
-    # Acepta tanto una sola url ("url") como una lista de URLs ("urls")
     urls = []
     if "urls" in data and isinstance(data["urls"], list):
         urls = data["urls"]
     elif "url" in data:
         urls = [data["url"]]
-    
+
     if not urls:
-        return jsonify({"ok": False, "error": "No se proporcionó ninguna URL o lista de URLs"}), 400
+        return jsonify({"ok": False, "error": "No se proporcionó ninguna URL"}), 400
 
     videos_procesados = []
 
@@ -34,40 +34,44 @@ def procesar_videos():
             raw_video = f"downloaded_{index}.mp4"
             output_filename = f"video_cortado_{index}.mp4"
 
-            # 1. Descargar el video usando yt-dlp con cookies y Node.js para resolver JavaScript
+            # Parámetros para saltar restricciones de bot usando clientes de Android/iOS
             ydl_command = [
                 "yt-dlp",
-                "--cookies", COOKIES_PATH,
-                "--js-runtimes", "node",
+                "--extractor-args", "youtube:player_client=android,ios",
                 "-f", "best[ext=mp4]/best",
                 "-o", raw_video,
                 video_url
             ]
-            
+
+            # Si el archivo de cookies existe y no está vacío, agregarlo al comando
+            if os.path.exists(COOKIES_PATH) and os.path.getsize(COOKIES_PATH) > 0:
+                ydl_command.extend(["--cookies", COOKIES_PATH])
+
             result = subprocess.run(ydl_command, capture_output=True, text=True)
+            
             if result.returncode != 0:
                 return jsonify({
-                    "ok": False, 
-                    "error": f"Falla en la descarga del video {index+1} con yt-dlp: {result.stderr}"
+                    "ok": False,
+                    "error": f"Falla en la descarga del video {index + 1} con yt-dlp: {result.stderr}"
                 }), 500
 
-            # 2. Cortar silencios con FFmpeg
+            # Procesamiento con FFmpeg
             process_command = [
                 "ffmpeg", "-y", "-i", raw_video,
                 "-vf", "silenceremove=stop_periods=-1:stop_duration=1:stop_threshold=-30dB",
                 output_filename
             ]
-            
+
             proc_result = subprocess.run(process_command, capture_output=True, text=True)
+            
             if proc_result.returncode != 0:
                 return jsonify({
-                    "ok": False, 
-                    "error": f"Falla al procesar el video {index+1} con FFmpeg: {proc_result.stderr}"
+                    "ok": False,
+                    "error": f"Falla al procesar el video {index + 1} con FFmpeg: {proc_result.stderr}"
                 }), 500
 
             videos_procesados.append(output_filename)
 
-            # Limpiar archivo temporal crudo
             if os.path.exists(raw_video):
                 os.remove(raw_video)
 

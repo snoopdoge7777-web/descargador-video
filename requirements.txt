@@ -1,6 +1,7 @@
 flask
 requests
 yt-dlp
+yt-dlp-ejs
 git+https://github.com/JuanBindez/pytubefix.git
 google-auth
 google-auth-oauthlib

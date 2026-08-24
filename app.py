@@ -11,7 +11,6 @@ DRIVE_FOLDER_ID = "1buXOFhZx-SVgx_3cqUAGJ51ueRc8ighL"
 COOKIES_PATH = "/tmp/youtube_cookies.txt"
 
 def setup_cookies():
-    # Lee la variable de entorno COOKIES_CONTENT que creaste en Render
     cookies_content = os.environ.get("COOKIES_CONTENT")
     if cookies_content:
         with open(COOKIES_PATH, "w") as f:
@@ -34,8 +33,9 @@ def process_video():
 
     output_filename = f"/tmp/{video_title}.mp4"
 
+    # Configuración flexible de formato para yt-dlp
     ydl_opts = {
-        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+        'format': 'b/bv*+ba/best',
         'outtmpl': output_filename,
         'merge_output_format': 'mp4',
         'quiet': True,
@@ -47,16 +47,13 @@ def process_video():
         }
     }
 
-    # Escribe las cookies si la variable existe
     if setup_cookies():
         ydl_opts['cookiefile'] = COOKIES_PATH
 
     try:
-        # Descarga con yt-dlp
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([video_url])
 
-        # Subida a Drive
         file_id = "Drive_No_Configurado"
         if os.path.exists('token.json'):
             service = get_drive_service()
@@ -75,7 +72,7 @@ def process_video():
 
         return jsonify({
             "status": "success",
-            "message": "Video descargado y subido correctamente a Google Drive",
+            "message": "Video descargado y procesado con éxito",
             "file_id": file_id
         }), 200
 

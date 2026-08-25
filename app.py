@@ -24,8 +24,7 @@ def download_video():
     cookie_path = os.path.join(os.path.dirname(__file__), 'www.youtube.com_cookies.txt')
 
     ydl_opts = {
-        # Obtiene la máxima calidad nativa (1080p/4K) disponible en YouTube
-        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+        'format': 'best',
         'outtmpl': raw_path,
         'quiet': True,
         'extractor_args': {
@@ -37,11 +36,11 @@ def download_video():
         ydl_opts['cookiefile'] = cookie_path
 
     try:
-        # 1. Descargar el video en máxima calidad original
+        # 1. Descargar video estándar estable
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
 
-        # 2. Detección de silencios rápida
+        # 2. Detectar marcas de silencio con ffmpeg
         silence_cmd = [
             'ffmpeg', '-i', raw_path,
             '-af', 'silencedetect=noise=-30dB:d=0.8',
@@ -52,7 +51,7 @@ def download_video():
         starts = [float(x) for x in re.findall(r'silence_start: (\d+\.?\d*)', result.stderr)]
         ends = [float(x) for x in re.findall(r'silence_end: (\d+\.?\d*)', result.stderr)]
 
-        # 3. Recorte instantáneo (-c copy) para mantener el 100% de la calidad sin sobrecargar Render
+        # 3. Recortar en clips independientes
         clips_dir = os.path.join(work_dir, 'output')
         os.makedirs(clips_dir, exist_ok=True)
 
@@ -76,7 +75,7 @@ def download_video():
             '-i', raw_path, '-c', 'copy', os.path.join(clips_dir, f'clip_{clip_index:03d}.mp4')
         ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-        # 4. Empaquetar resultados en ZIP
+        # 4. Empaquetar en ZIP
         zip_path = '/tmp/clips_recortados'
         archive_path = shutil.make_archive(zip_path, 'zip', clips_dir)
 

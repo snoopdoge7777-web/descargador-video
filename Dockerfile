@@ -1,6 +1,5 @@
 FROM python:3.11-slim
 
-# Instalar Node.js para resolver los desafíos de JS de YouTube
 RUN apt-get update && apt-get install -y --no-install-recommends \
     nodejs \
     ca-certificates \
@@ -15,4 +14,4 @@ COPY . .
 
 EXPOSE 10000
 
-CMD ["gunicorn", "--bind", "0.0.0.0:10000", "app:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:10000", "--timeout", "120", "app:app"]

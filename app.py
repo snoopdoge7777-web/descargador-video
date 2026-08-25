@@ -33,14 +33,16 @@ def process_video():
 
     output_filename = f"/tmp/{video_title}.mp4"
 
-    # Selección de formato directa y universal
     ydl_opts = {
-        'format': 'bestvideo+bestaudio/best',
+        'format': 'best',
         'outtmpl': output_filename,
-        'merge_output_format': 'mp4',
         'quiet': True,
         'no_warnings': True,
-        'nocheckcertificate': True
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['mweb', 'tv']
+            }
+        }
     }
 
     if setup_cookies():

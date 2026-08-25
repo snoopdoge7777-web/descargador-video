@@ -24,7 +24,8 @@ def download_video():
     cookie_path = os.path.join(os.path.dirname(__file__), 'www.youtube.com_cookies.txt')
 
     ydl_opts = {
-        'format': 'best',
+        # Fuerza la descarga de la máxima calidad de video y audio disponible
+        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
         'outtmpl': raw_path,
         'quiet': True,
         'extractor_args': {
@@ -36,11 +37,11 @@ def download_video():
         ydl_opts['cookiefile'] = cookie_path
 
     try:
-        # 1. Descargar video
+        # 1. Descargar video en máxima calidad
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
 
-        # 2. Detectar marcas de silencio con ffmpeg
+        # 2. Detectar silencios
         silence_cmd = [
             'ffmpeg', '-i', raw_path,
             '-af', 'silencedetect=noise=-30dB:d=0.8',
@@ -48,11 +49,10 @@ def download_video():
         ]
         result = subprocess.run(silence_cmd, stderr=subprocess.PIPE, text=True)
 
-        # Extraer tiempos de inicio y fin de silencios
         starts = [float(x) for x in re.findall(r'silence_start: (\d+\.?\d*)', result.stderr)]
         ends = [float(x) for x in re.findall(r'silence_end: (\d+\.?\d*)', result.stderr)]
 
-        # 3. Recortar en clips independientes descartando el silencio
+        # 3. Recortar clips manteniendo calidad visual alta (CRF 18 / Preset Slow)
         clips_dir = os.path.join(work_dir, 'output')
         os.makedirs(clips_dir, exist_ok=True)
 
@@ -61,22 +61,28 @@ def download_video():
 
         for s_start, s_end in zip(starts, ends):
             duration = s_start - current_start
-            if duration > 1.5:  # Filtra clips menores a 1.5 segundos
+            if duration > 1.5:
                 out_clip = os.path.join(clips_dir, f'clip_{clip_index:03d}.mp4')
                 subprocess.run([
                     'ffmpeg', '-y', '-ss', str(current_start), '-to', str(s_start),
-                    '-i', raw_path, '-c', 'copy', out_clip
+                    '-i', raw_path,
+                    '-c:v', 'libx264', '-crf', '18', '-preset', 'fast',
+                    '-c:a', 'aac', '-b:a', '192k',
+                    out_clip
                 ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 clip_index += 1
             current_start = s_end
 
-        # Ultimo clip desde el ultimo silencio hasta el final
+        # Último clip
         subprocess.run([
             'ffmpeg', '-y', '-ss', str(current_start),
-            '-i', raw_path, '-c', 'copy', os.path.join(clips_dir, f'clip_{clip_index:03d}.mp4')
+            '-i', raw_path,
+            '-c:v', 'libx264', '-crf', '18', '-preset', 'fast',
+            '-c:a', 'aac', '-b:a', '192k',
+            os.path.join(clips_dir, f'clip_{clip_index:03d}.mp4')
         ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-        # 4. Empaquetar en un archivo ZIP
+        # 4. Empaquetar en ZIP
         zip_path = '/tmp/clips_recortados'
         archive_path = shutil.make_archive(zip_path, 'zip', clips_dir)
 

@@ -1,9 +1,3 @@
-Flask
-requests
-yt-dlp
-yt-dlp-ejs
-pytubefix
-google-auth
-google-auth-oauthlib
-google-api-python-client
-gunicorn
+Flask>=3.0.0
+yt-dlp>=2024.08.01
+gunicorn>=21.2.0

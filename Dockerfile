@@ -1,15 +1,14 @@
 FROM python:3.11-slim
 
-# Instalar dependencias del sistema, Node.js, Deno y Curl
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     unzip \
     nodejs \
     ca-certificates \
+    ffmpeg \
     && curl -fsSL https://deno.land/install.sh | sh \
     && rm -rf /var/lib/apt/lists/*
 
-# Agregar Deno al PATH del sistema
 ENV PATH="/root/.deno/bin:$PATH"
 
 WORKDIR /app
@@ -21,4 +20,4 @@ COPY . .
 
 EXPOSE 10000
 
-CMD ["gunicorn", "--bind", "0.0.0.0:10000", "--timeout", "120", "app:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:10000", "--timeout", "180", "app:app"]

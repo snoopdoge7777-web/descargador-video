@@ -1,4 +1,6 @@
 import os
+import re
+import shutil
 import subprocess
 from flask import Flask, request, send_file
 import yt_dlp
@@ -13,13 +15,12 @@ def download_video():
     if not url:
         return {"status": "error", "message": "Falta la URL"}, 400
 
-    raw_path = '/tmp/raw_video.mp4'
-    trimmed_path = '/tmp/video.mp4'
-    
-    for path in [raw_path, trimmed_path]:
-        if os.path.exists(path):
-            os.remove(path)
+    work_dir = '/tmp/clips'
+    if os.path.exists(work_dir):
+        shutil.rmtree(work_dir)
+    os.makedirs(work_dir, exist_ok=True)
 
+    raw_path = os.path.join(work_dir, 'input.mp4')
     cookie_path = os.path.join(os.path.dirname(__file__), 'www.youtube.com_cookies.txt')
 
     ydl_opts = {
@@ -39,18 +40,48 @@ def download_video():
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
 
-        # 2. Recortar silencios con ffmpeg (Filtro silenceremove)
-        # Recorta silencios al inicio y entremedio menores a -30dB y duración mayor a 0.5s
-        ffmpeg_cmd = [
-            'ffmpeg', '-y', '-i', raw_path,
-            '-af', 'silenceremove=start_periods=1:start_duration=0.5:start_threshold=-30dB:detection=peak,areverse,silenceremove=start_periods=1:start_duration=0.5:start_threshold=-30dB:detection=peak,areverse',
-            '-c:v', 'copy',
-            trimmed_path
+        # 2. Detectar marcas de silencio con ffmpeg
+        silence_cmd = [
+            'ffmpeg', '-i', raw_path,
+            '-af', 'silencedetect=noise=-30dB:d=0.8',
+            '-f', 'null', '-'
         ]
-        
-        subprocess.run(ffmpeg_cmd, check=True)
-        
-        return send_file(trimmed_path, as_attachment=True, download_name="video.mp4", mimetype="video/mp4")
+        result = subprocess.run(silence_cmd, stderr=subprocess.PIPE, text=True)
+
+        # Extraer tiempos de inicio y fin de silencios
+        starts = [float(x) for x in re.findall(r'silence_start: (\d+\.?\d*)', result.stderr)]
+        ends = [float(x) for x in re.findall(r'silence_end: (\d+\.?\d*)', result.stderr)]
+
+        # 3. Recortar en clips independientes descartando el silencio
+        clips_dir = os.path.join(work_dir, 'output')
+        os.makedirs(clips_dir, exist_ok=True)
+
+        current_start = 0.0
+        clip_index = 1
+
+        for s_start, s_end in zip(starts, ends):
+            duration = s_start - current_start
+            if duration > 1.5:  # Filtra clips menores a 1.5 segundos
+                out_clip = os.path.join(clips_dir, f'clip_{clip_index:03d}.mp4')
+                subprocess.run([
+                    'ffmpeg', '-y', '-ss', str(current_start), '-to', str(s_start),
+                    '-i', raw_path, '-c', 'copy', out_clip
+                ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                clip_index += 1
+            current_start = s_end
+
+        # Ultimo clip desde el ultimo silencio hasta el final
+        subprocess.run([
+            'ffmpeg', '-y', '-ss', str(current_start),
+            '-i', raw_path, '-c', 'copy', os.path.join(clips_dir, f'clip_{clip_index:03d}.mp4')
+        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+        # 4. Empaquetar en un archivo ZIP
+        zip_path = '/tmp/clips_recortados'
+        archive_path = shutil.make_archive(zip_path, 'zip', clips_dir)
+
+        return send_file(archive_path, as_attachment=True, download_name="clips_recortados.zip", mimetype="application/zip")
+
     except Exception as e:
         return {"status": "error", "message": f"Error de proceso: {str(e)}"}, 500
 

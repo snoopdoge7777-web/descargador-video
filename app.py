@@ -16,14 +16,20 @@ def download_video():
     if os.path.exists(output_path):
         os.remove(output_path)
 
+    # Ruta del archivo de cookies subido a la raíz de GitHub
+    cookie_path = os.path.join(os.path.dirname(__file__), 'www.youtube.com_cookies.txt')
+
     ydl_opts = {
         'format': 'best',
         'outtmpl': output_path,
-        'extractor_args': {
-            'youtube': ['player_client=ios,android']
-        },
-        'quiet': True
+        'quiet': True,
+        'nocheckcertificate': True
     }
+
+    if os.path.exists(cookie_path):
+        ydl_opts['cookiefile'] = cookie_path
+    else:
+        return {"status": "error", "message": "El archivo de cookies no existe en la ruta del servidor"}, 500
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:

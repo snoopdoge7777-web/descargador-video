@@ -1,6 +1,6 @@
 import os
+import requests
 from flask import Flask, request, send_file
-import yt_dlp
 
 app = Flask(__name__)
 
@@ -16,26 +16,38 @@ def download_video():
     if os.path.exists(output_path):
         os.remove(output_path)
 
-    # Detectar el archivo de cookies local si existe en el repositorio
-    cookie_path = os.path.join(os.path.dirname(__file__), 'www.youtube.com_cookies.txt')
-
-    ydl_opts = {
-        'format': 'best',
-        'outtmpl': output_path,
-        'extractor_args': {
-            'youtube': ['player_client=mweb,ios,web']
-        },
-        'quiet': True
+    # API de procesado directo de video
+    cobalt_api = "https://api.cobalt.tools/api/json"
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "url": url,
+        "vCodec": "h264",
+        "videoQuality": "720"
     }
 
-    if os.path.exists(cookie_path):
-        ydl_opts['cookiefile'] = cookie_path
-
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
+        # Solicitar enlace de descarga directo
+        res = requests.post(cobalt_api, json=payload, headers=headers)
+        res_data = res.json()
+        
+        if res_data.get("status") == "error":
+            return {"status": "error", "message": res_data.get("text")}, 500
+
+        video_url = res_data.get("url")
+        if not video_url:
+            return {"status": "error", "message": "No se pudo obtener la URL de descarga"}, 500
+
+        # Descargar el archivo binario
+        video_stream = requests.get(video_url, stream=True)
+        with open(output_path, 'wb') as f:
+            for chunk in video_stream.iter_content(chunk_size=8192):
+                f.write(chunk)
         
         return send_file(output_path, as_attachment=True, download_name="video.mp4", mimetype="video/mp4")
+
     except Exception as e:
         return {"status": "error", "message": f"Error de proceso: {str(e)}"}, 500
 

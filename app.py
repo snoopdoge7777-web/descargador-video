@@ -16,19 +16,14 @@ def download_video():
     if os.path.exists(output_path):
         os.remove(output_path)
 
-    cookie_path = os.path.join(os.path.dirname(__file__), 'www.youtube.com_cookies.txt')
-
     ydl_opts = {
         'format': 'best',
         'outtmpl': output_path,
         'extractor_args': {
-            'youtube': ['player_client=android,ios,web']
+            'youtube': ['player_client=ios,android']
         },
         'quiet': True
     }
-
-    if os.path.exists(cookie_path):
-        ydl_opts['cookiefile'] = cookie_path
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:

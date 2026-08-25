@@ -1,4 +1,5 @@
 import os
+import subprocess
 from flask import Flask, request, send_file
 import yt_dlp
 
@@ -12,15 +13,18 @@ def download_video():
     if not url:
         return {"status": "error", "message": "Falta la URL"}, 400
 
-    output_path = '/tmp/video.mp4'
-    if os.path.exists(output_path):
-        os.remove(output_path)
+    raw_path = '/tmp/raw_video.mp4'
+    trimmed_path = '/tmp/video.mp4'
+    
+    for path in [raw_path, trimmed_path]:
+        if os.path.exists(path):
+            os.remove(path)
 
     cookie_path = os.path.join(os.path.dirname(__file__), 'www.youtube.com_cookies.txt')
 
     ydl_opts = {
         'format': 'best',
-        'outtmpl': output_path,
+        'outtmpl': raw_path,
         'quiet': True,
         'extractor_args': {
             'youtube': ['player_client=ios,android,web']
@@ -31,10 +35,22 @@ def download_video():
         ydl_opts['cookiefile'] = cookie_path
 
     try:
+        # 1. Descargar video
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
+
+        # 2. Recortar silencios con ffmpeg (Filtro silenceremove)
+        # Recorta silencios al inicio y entremedio menores a -30dB y duración mayor a 0.5s
+        ffmpeg_cmd = [
+            'ffmpeg', '-y', '-i', raw_path,
+            '-af', 'silenceremove=start_periods=1:start_duration=0.5:start_threshold=-30dB:detection=peak,areverse,silenceremove=start_periods=1:start_duration=0.5:start_threshold=-30dB:detection=peak,areverse',
+            '-c:v', 'copy',
+            trimmed_path
+        ]
         
-        return send_file(output_path, as_attachment=True, download_name="video.mp4", mimetype="video/mp4")
+        subprocess.run(ffmpeg_cmd, check=True)
+        
+        return send_file(trimmed_path, as_attachment=True, download_name="video.mp4", mimetype="video/mp4")
     except Exception as e:
         return {"status": "error", "message": f"Error de proceso: {str(e)}"}, 500
 

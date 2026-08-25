@@ -24,9 +24,11 @@ def download_video():
     cookie_path = os.path.join(os.path.dirname(__file__), 'www.youtube.com_cookies.txt')
 
     ydl_opts = {
-        'format': 'best',
+        # Busca la máxima calidad hasta 1080p manteniendo máxima velocidad
+        'format': 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best',
         'outtmpl': raw_path,
         'quiet': True,
+        'merge_output_format': 'mp4',
         'extractor_args': {
             'youtube': ['player_client=ios,android,web']
         }
@@ -36,11 +38,11 @@ def download_video():
         ydl_opts['cookiefile'] = cookie_path
 
     try:
-        # 1. Descargar video estándar estable
+        # 1. Descarga en alta resolución (1080p)
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
 
-        # 2. Detectar marcas de silencio con ffmpeg
+        # 2. Detección rápida de silencios
         silence_cmd = [
             'ffmpeg', '-i', raw_path,
             '-af', 'silencedetect=noise=-30dB:d=0.8',
@@ -51,7 +53,7 @@ def download_video():
         starts = [float(x) for x in re.findall(r'silence_start: (\d+\.?\d*)', result.stderr)]
         ends = [float(x) for x in re.findall(r'silence_end: (\d+\.?\d*)', result.stderr)]
 
-        # 3. Recortar en clips independientes
+        # 3. Recorte en clips manteniendo 100% la calidad descargada (-c copy ultra rápido)
         clips_dir = os.path.join(work_dir, 'output')
         os.makedirs(clips_dir, exist_ok=True)
 
@@ -69,7 +71,7 @@ def download_video():
                 clip_index += 1
             current_start = s_end
 
-        # Último clip
+        # Último segmento
         subprocess.run([
             'ffmpeg', '-y', '-ss', str(current_start),
             '-i', raw_path, '-c', 'copy', os.path.join(clips_dir, f'clip_{clip_index:03d}.mp4')
